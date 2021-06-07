@@ -2,13 +2,19 @@ library(dplyr)
 library(purrr)
 library(readr)
 
-datdir <- "~/code/nba_playoffs_analysis/data"
+datdir <- "data"
 datfiles <- list.files(datdir)
-setwd(datdir)
+
+read_season <- function(str){
+  year <- stringr::str_extract(str, '[0-9]+')
+  read_csv(str) %>%
+    mutate(season = as.numeric(year))
+}
+
 
 dat <- datfiles %>%
-  map(read_csv) %>%
-  bind_rows(.id = "season")
+  paste0('data/', .) %>%
+  map_df(read_season)
 
 teams <- distinct(dat, season, team = away_team)
 
