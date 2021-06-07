@@ -44,11 +44,28 @@ po_dat <- dat %>%
   mutate(team1 = pmin(away_team, home_team), team2 = pmax(away_team, home_team)) %>%
   mutate(game_winner = ifelse(away_team_score > home_team_score, away_team, home_team)) %>%
   mutate(team1_gamewin = game_winner == team1) 
+
+po_dat_long <- dat %>%
+  inner_join(rs_ends) %>%
+  group_by(season) %>%
+  filter(start_time > rs_end_date) %>% 
+  mutate(away_team = word(away_team,-1)
+         , home_team = word(home_team,-1)
+         , series = paste0(pmin(home_team, away_team), '_',pmax(home_team, away_team))) %>%
+  group_by(series, season) %>%
+  arrange(series, start_time) %>%
+  mutate(game_num = row_number()) %>%
+  pivot_longer(cols = c(away_team, home_team)) %>%
+  mutate(win = if_else(name == 'away_team' & away_team_score > home_team_score |
+                         name == 'home_team' & away_team_score < home_team_score , TRUE, FALSE)) 
+  
+
 po_series <- po_dat %>%
   group_by(season, team1, team2) %>%
   summarise(ngames = n(), team1_nw = sum(team1_gamewin), 
             best_of = 2 * pmax(team1_nw, ngames - team1_nw) - 1, 
             team1_sw = team1_nw > best_of / 2)
+
 po_dat2 <- po_dat %>%
   inner_join(po_series) %>%
   group_by(team1, team2) %>%
