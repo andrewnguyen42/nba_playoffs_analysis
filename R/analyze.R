@@ -1,10 +1,51 @@
-library(dplyr)
 library(purrr)
 library(readr)
 library(tidyr)
 library(stringr)
 library(ggplot2)
 library(gamlss)
+library(dplyr)
+library(lubridate)
+library(fuzzyjoin)
+
+#install fivethirtyeightdata via github
+#install.packages('fivethirtyeightdata', repos = 'https://fivethirtyeightdata.github.io/drat/', type = 'source')
+
+team_mapping <- tribble(~team_short, ~team_long
+                        ,'WAS', 'WASHINGTON WIZARDS'
+                        ,'BOS', 'BOSTON CELTICS'
+                        ,'CHH', 'CHARLOTTE HORNETS'
+                        ,'CHI', 'CHICAGO BULLS'
+                        ,'DEN', 'DENVER NUGGETS'
+                        ,'GSW', 'GOLDEN STATE WARRIORS'
+                        ,'LAL', 'LOS ANGELES LAKERS'
+                        ,'NJN', 'NEW JERSEY NETS'
+                        ,'ORL', 'ORLANDO MAGIC'
+                        ,'PHO', 'PHOENIX SUNS'
+                        ,'SAC', 'SACRAMENTO KINGS'
+                        ,'SAS', 'SAN ANTONIO SPURS'
+                        ,'SEA', 'SEATTLE SUPERSONICS'
+                        ,'TOR', 'TORONTO RAPTORS'
+                        ,'DET', 'DETROIT PISTONS'
+                        ,'LAC', 'LOS ANGELES CLIPPERS'
+                        ,'IND', 'INDIANA PACERS'
+                        ,'HOU', 'HOUSTON ROCKETS'
+                        ,'CLE', 'CLEVELAND CAVALIERS'
+                        ,'UTA', 'UTAH JAZZ'
+                        ,'NYK', 'NEW YORK KNICKS'
+                        ,'MIN', 'MINNESOTA TIMBERWOLVES'
+                        ,'MIL', 'MILWAUKEE BUCKS'
+                        ,'MIA', 'MIAMI HEAT'
+                        ,'POR', 'PORTLAND TRAIL BLAZERS'
+                        ,'DAL', 'DALLAS MAVERICKS'
+                        ,'ATL', 'ATLANTA HAWKS'
+                        ,'PHI', 'PHILADELPHIA 76ERS'
+                        ,'MEM', 'MEMPHIS GRIZZLIES'
+                        ,'NOP', 'NEW ORLEANS PELICANS'
+                        ,'CHO', 'CHARLOTTE BOBCATS'
+                        ,'NOK', 'NEW ORLEANS HORNETS'
+                        ,'OKC', 'OKLAHOMA CITY THUNDER'
+                        ,'BRK', 'BROOKLYN NETS')
 
 datdir <- "data"
 datfiles <- list.files(datdir)
@@ -41,6 +82,12 @@ rs_ends <- teams %>%
   filter(row_number() == 17) %>%
   select(season, rs_end_date = last_game)
 
+elo_long <- fivethirtyeightdata::nba_carmelo %>%
+  select(date, season, elo1_pre, elo2_pre, team1, team2, playoff) %>% 
+  filter(year(date) >= 1998) %>% #playoff game data goes up to 1998
+  pivot_longer(c(team1, team2), values_to = 'team_short') %>% 
+  mutate(elo_pre = if_else(name == 'team1', elo1_pre, elo2_pre), .keep = 'unused') 
+
 po_dat <- dat %>%
   inner_join(rs_ends) %>%
   group_by(season) %>%
@@ -52,10 +99,10 @@ po_dat <- dat %>%
 po_dat_long <- dat %>%
   inner_join(rs_ends) %>%
   group_by(season) %>%
-  filter(start_time > rs_end_date) %>% 
-  mutate(away_team = word(away_team,-1)
-         , home_team = word(home_team,-1)
-         , series = paste0(pmin(home_team, away_team), '_',pmax(home_team, away_team))) %>%
+  filter(start_time > rs_end_date) %>%
+  mutate(away_team_short = word(away_team,-1)
+         , home_team_short = word(home_team,-1)
+         , series = paste0(pmin(home_team_short, away_team_short), '_',pmax(home_team_short, away_team_short))) %>%
   group_by(series, season) %>%
   arrange(series, start_time) %>%
   mutate(game_num = row_number()) %>%
@@ -66,8 +113,25 @@ po_dat_long <- dat %>%
   mutate(nwins = sum(win)) %>%
   group_by(series, season) %>%
   mutate(series_length = max(game_num)
-         , won_series = nwins > series_length/2)
-  
+         , won_series = nwins > series_length/2
+         , date = as.Date(start_time)) %>%
+  inner_join(team_mapping, by = c('team' = 'team_long')) %>%
+  full_join(elo_long , by = c('team_short', 'date'))
+
+#huge hack here to get the ELO and playoff dates to match on a rolling basis  
+po_dat_long <- po_dat_long %>%
+  group_by(team_short) %>%
+  nest() %>%
+  inner_join(elo_long %>% group_by(team_short) %>% nest(), by = 'team_short') %>%
+  mutate(data = map2(data.x, data.y, function(playoff_data, elo_data){
+    full_join(playoff_data, elo_data, by = c('date', 'season')) %>%
+      arrange(date) %>%
+      tidyr::fill(elo_pre, .direction = 'up') %>%
+      filter(!is.na(won_series))
+  })) %>%
+  select(-data.x, -data.y) %>%
+  unnest 
+
 po_dat_wide <- po_dat_long %>%
   select(season, series, team, game_num, win, series_length, won_series) %>%
   pivot_wider(names_from = game_num, values_from = win, names_prefix = "game_")
@@ -142,10 +206,11 @@ game7_series <- po_dat_wide %>%
 
 game_2_model <- gamlss::gamlss(won_series ~ game_1 + game_2 
                , data = game7_series
-               , link = BB())
+               , link = NB())
 mu_coefs <- game_2_model$mu.coefficients
 game_2_model$sigma.coefficients
 
+predict(game_2_model, newdata = tribble( ~game_1, ~game_2,  TRUE, TRUE))
 
 fitted_distributions <- tribble(~id, ~fitted 
                          , 'WW', mu_coefs[1] +  mu_coefs[2] +  mu_coefs[3]
