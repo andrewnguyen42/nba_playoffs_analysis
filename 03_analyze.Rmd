@@ -53,3 +53,56 @@ po_dat_long %>%
   plot_series_correlation(7)
 
 ```
+
+```{r}
+#basic linear probability
+
+po_dat_wide %>%
+  filter(series_length == 4) %>%
+  lm(data= ., won_series ~ game_1 + game_2 + game_3)
+
+po_dat_wide %>%
+  filter(series_length == 5) %>%
+  lm(data= ., won_series ~ game_1 + game_2 + game_3 + game_4)
+
+po_dat_wide %>%
+  filter(series_length == 6) %>%
+  lm(data= ., won_series ~ game_1 + game_2 + game_3 + game_4 + game_5)
+
+po_dat_wide %>%
+  filter(series_length == 7) %>%
+  lm(data= ., won_series ~ game_1 + game_2 + game_3 + game_4 + game_5 + game_6)
+```
+
+```{r}
+
+game7_series <- po_dat_wide %>%
+  filter(series_length == 7)
+
+game_2_model <- gamlss::gamlss(won_series ~ game_1 + game_2 
+               , data = game7_series
+               , link = NB())
+mu_coefs <- game_2_model$mu.coefficients
+game_2_model$sigma.coefficients
+
+predict(game_2_model, newdata = tribble( ~game_1, ~game_2,  TRUE, TRUE))
+
+fitted_distributions <- tribble(~id, ~fitted 
+                         , 'WW', mu_coefs[1] +  mu_coefs[2] +  mu_coefs[3]
+                         , 'WL', mu_coefs[1] +  mu_coefs[2]
+                         , 'LW', mu_coefs[1] + mu_coefs[3]
+                         , 'LL', mu_coefs[1] ) %>%
+  mutate(sigma = exp(game_2_model$sigma.coefficients)
+         , alpha = fitted/sigma
+         , beta = (1-fitted)/sigma
+         , posterior_probability = pbinom(q = 3, size = 7, prob = fitted, lower.tail = FALSE) ) 
+
+#how prior distribution of win probability changes
+fitted_distributions %>%
+  crossing(x = seq(.01, .99, length.out = 100)) %>%
+  mutate(prior_density = dbeta(x, alpha, beta)) %>%
+  ggplot(aes(x = x, y = prior_density, colour = id)) +
+  geom_line()
+
+
+```
