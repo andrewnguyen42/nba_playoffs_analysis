@@ -45,7 +45,7 @@ team_mapping <- tribble(~team_short, ~team_long
                         ,'BRK', 'BROOKLYN NETS')
 
 datdir <- "data"
-datfiles <- list.files(datdir)
+datfiles <- list.files(datdir, '*.csv')
 
 read_season <- function(str){
   year <- stringr::str_extract(str, '[0-9]+')
@@ -97,26 +97,31 @@ po_dat <- dat %>%
 po_dat_long <- dat %>%
   inner_join(rs_ends) %>%
   group_by(season) %>%
-  mutate(start_time = start_time - hours(4)) %>% #convert GMT to EDT
+  mutate(start_time = start_time - hours(4) #convert GMT to EDT
+         , date = as.Date(start_time)) %>% 
   filter(start_time > rs_end_date) %>%
-  mutate(away_team_short = word(away_team,-1)
-         , home_team_short = word(home_team,-1)
-         , series = paste0(pmin(home_team_short, away_team_short), '_',pmax(home_team_short, away_team_short))) %>%
+  inner_join(team_mapping, by = c('away_team' = 'team_long'), suffix = c('', '.away')) %>%
+  inner_join(team_mapping, by = c('home_team' = 'team_long'), suffix = c('.home', '.away')) %>%
+  mutate(team_short.home = ifelse(team_short.home == "CHARLOTTE HORNETS" & season < 2016, "CHH", team_short.home)
+         , team_short.away = ifelse(team_short.away == "CHARLOTTE HORNETS" & season < 2016, "CHH", team_short.away)) %>%
+  inner_join(elo_long , by = c('team_short.home' = 'team_short', 'season', 'date')) %>%
+  inner_join(elo_long , by = c('team_short.away' = 'team_short', 'season', 'date'), suffix = c('.away', '.home'))  %>%
+  mutate(series = paste0(pmin(team_short.home, team_short.away), '_', pmax(team_short.home, team_short.away))) %>%
   group_by(series, season) %>%
   arrange(series, start_time) %>%
   mutate(game_num = row_number()) %>%
+  select(-rs_end_date, -playoff.away, -playoff.home, -team_short.home, -team_short.away) %>%
   pivot_longer(cols = c(away_team, home_team), values_to = 'team') %>%
   mutate(win = if_else(name == 'away_team' & away_team_score > home_team_score |
-                         name == 'home_team' & away_team_score < home_team_score , TRUE, FALSE)) %>%
+                         name == 'home_team' & away_team_score < home_team_score , TRUE, FALSE)
+         , team_elo = if_else(name == 'away_team', elo_pre.away, elo_pre.home)
+         , opponent_elo = if_else(name == 'away_team', elo_pre.home, elo_pre.away)) %>%
+  select(-elo_pre.away, -elo_pre.home) %>%
   group_by(series, season, team) %>%
   mutate(nwins = sum(win)) %>%
   group_by(series, season) %>%
   mutate(series_length = max(game_num)
-         , won_series = nwins > series_length/2
-         , date = as.Date(start_time)) %>%
-  inner_join(team_mapping, by = c('team' = 'team_long')) %>%
-  mutate(team_short = ifelse(team == "CHARLOTTE HORNETS" & season < 2016, "CHH", team_short)) %>%
-  inner_join(elo_long , by = c('team_short', 'season', 'date')) %>%
+         , won_series = nwins > series_length/2) %>%
   group_by(series, season) %>%
   filter(!any(won_series & nwins == 3))
 
