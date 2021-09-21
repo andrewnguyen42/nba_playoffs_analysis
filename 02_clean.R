@@ -11,7 +11,7 @@ library(lubridate)
 team_mapping <- tribble(~team_short, ~team_long
                         ,'WAS', 'WASHINGTON WIZARDS'
                         ,'BOS', 'BOSTON CELTICS'
-                        ,'CHH', 'CHARLOTTE HORNETS'
+                        ,'CHO', 'CHARLOTTE HORNETS'
                         ,'CHI', 'CHICAGO BULLS'
                         ,'DEN', 'DENVER NUGGETS'
                         ,'GSW', 'GOLDEN STATE WARRIORS'
@@ -40,7 +40,7 @@ team_mapping <- tribble(~team_short, ~team_long
                         ,'MEM', 'MEMPHIS GRIZZLIES'
                         ,'NOP', 'NEW ORLEANS PELICANS'
                         ,'CHO', 'CHARLOTTE BOBCATS'
-                        ,'NOK', 'NEW ORLEANS HORNETS'
+                        ,'NOP', 'NEW ORLEANS HORNETS'
                         ,'OKC', 'OKLAHOMA CITY THUNDER'
                         ,'BRK', 'BROOKLYN NETS')
 
@@ -88,6 +88,7 @@ elo_long <- fivethirtyeightdata::nba_carmelo %>%
 po_dat <- dat %>%
   inner_join(rs_ends) %>%
   group_by(season) %>%
+  mutate(start_time = start_time - hours(4)) %>% #convert GMT to EDT
   filter(start_time > rs_end_date) %>%
   mutate(team1 = pmin(away_team, home_team), team2 = pmax(away_team, home_team)) %>%
   mutate(game_winner = ifelse(away_team_score > home_team_score, away_team, home_team)) %>%
@@ -96,6 +97,7 @@ po_dat <- dat %>%
 po_dat_long <- dat %>%
   inner_join(rs_ends) %>%
   group_by(season) %>%
+  mutate(start_time = start_time - hours(4)) %>% #convert GMT to EDT
   filter(start_time > rs_end_date) %>%
   mutate(away_team_short = word(away_team,-1)
          , home_team_short = word(home_team,-1)
@@ -113,33 +115,9 @@ po_dat_long <- dat %>%
          , won_series = nwins > series_length/2
          , date = as.Date(start_time)) %>%
   inner_join(team_mapping, by = c('team' = 'team_long')) %>%
-  full_join(elo_long , by = c('team_short', 'date'))
-
-#huge hack here to get the ELO and playoff dates to match on a rolling basis  
-po_dat_long <- po_dat_long %>%
-  group_by(team_short) %>%
-  nest() %>%
-  inner_join(elo_long %>% group_by(team_short) %>% nest(), by = 'team_short') %>%
-  mutate(data = map2(data.x, data.y, function(playoff_data, elo_data){
-    full_join(playoff_data, elo_data, by = c('date', 'season')) %>%
-      arrange(date) %>%
-      tidyr::fill(elo_pre, .direction = 'up') %>%
-      filter(!is.na(won_series))
-  })) %>%
-  select(-data.x, -data.y) %>%
-  unnest 
+  mutate(team_short = ifelse(team == "CHARLOTTE HORNETS" & season < 2016, "CHH", team_short)) %>%
+  inner_join(elo_long , by = c('team_short', 'season', 'date'))
 
 po_dat_wide <- po_dat_long %>%
   select(season, series, team, game_num, win, series_length, won_series) %>%
   pivot_wider(names_from = game_num, values_from = win, names_prefix = "game_")
-
-po_series <- po_dat %>%
-  group_by(season, team1, team2) %>%
-  summarise(ngames = n(), team1_nw = sum(team1_gamewin), 
-            best_of = 2 * pmax(team1_nw, ngames - team1_nw) - 1, 
-            team1_sw = team1_nw > best_of / 2)
-
-#some exploratory analysis
-po_dat_long %>%
-  filter(series_length == 6, game_num == 1) %>%
-  lm(data = ., won_series ~ win)
