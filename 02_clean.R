@@ -116,8 +116,13 @@ po_dat_long <- dat %>%
          , date = as.Date(start_time)) %>%
   inner_join(team_mapping, by = c('team' = 'team_long')) %>%
   mutate(team_short = ifelse(team == "CHARLOTTE HORNETS" & season < 2016, "CHH", team_short)) %>%
-  inner_join(elo_long , by = c('team_short', 'season', 'date'))
+  inner_join(elo_long , by = c('team_short', 'season', 'date')) %>%
+  group_by(series, season) %>%
+  filter(!any(won_series & nwins == 3))
 
 po_dat_wide <- po_dat_long %>%
-  select(season, series, team, game_num, win, series_length, won_series) %>%
+  select(season = season, series, team, game_num, win, series_length, won_series) %>%
   pivot_wider(names_from = game_num, values_from = win, names_prefix = "game_")
+
+saveRDS(po_dat_long, "data/po_dat_long.rds")
+saveRDS(po_dat_wide, "data/po_dat_wide.rds")

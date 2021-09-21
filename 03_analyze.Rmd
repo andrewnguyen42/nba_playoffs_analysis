@@ -1,0 +1,55 @@
+---
+title: ''
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(ggplot2)
+library(gamlss)
+library(dplyr)
+
+po_dat_long <- readRDS('data/po_dat_long.rds')
+po_dat_wide <- readRDS('data/po_dat_wide.rds')
+
+```
+
+# Background
+
+An NBA playoff series is a set of games played until one team wins four games. The maximum number of games in a series is seven since both teams could win three games apiece and the seventh game is the series-deciding game. We refer to this structure as a "best of seven series." In this presentation, we'll be modeling the impact of winning a single game on the overall probability of winning a series. We'll also examine how we can approach this model a frequentist and Bayesian perspective.
+
+# Data Exploration
+
+Before building any models, let's look at the how a playoff series evolves. For a series that lasts 
+
+```{r}
+prepender <- function(string, prefix = "Game ") paste0(prefix, string)
+
+plot_series_correlation <- function(data, n_games_series){
+  data %>%
+    filter(series_length == n_games_series, win) %>%
+    ggplot(aes(x = win, fill = won_series, group = won_series)) +
+    geom_bar(position = "fill") +
+    facet_wrap(vars(game_num), nrow = 1, labeller = as_labeller(prepender)) +
+    theme(axis.title.x=element_blank(),
+          axis.text.x=element_blank(),
+          axis.ticks.x=element_blank()) +
+    guides(fill = "none") +
+    ylab('Proportion of series won') +
+    scale_fill_manual(values = c('TRUE' = 'blue', 'FALSE' = 'NA'))
+}
+
+
+po_dat_long %>%
+  plot_series_correlation(4)
+
+po_dat_long %>%
+  plot_series_correlation(5)
+
+po_dat_long %>%
+  plot_series_correlation(6)
+
+po_dat_long %>%
+  plot_series_correlation(7)
+
+```
