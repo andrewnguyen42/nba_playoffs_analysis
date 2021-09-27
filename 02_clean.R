@@ -127,7 +127,9 @@ po_dat_long <- dat %>%
 
 po_dat_wide <- po_dat_long %>%
   select(season = season, series, team, game_num, win, series_length, won_series) %>%
-  pivot_wider(names_from = game_num, values_from = win, names_prefix = "game_")
+  pivot_wider(names_from = game_num, values_from = win, names_prefix = "game_") %>%
+  group_by(series, season) %>%
+  sample_n(1) 
 
 saveRDS(po_dat_long, "data/po_dat_long.rds")
 saveRDS(po_dat_wide, "data/po_dat_wide.rds")

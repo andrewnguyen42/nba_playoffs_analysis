@@ -6,7 +6,7 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
 library(ggplot2)
-library(gamlss)
+#library(gamlss)
 library(dplyr)
 
 po_dat_long <- readRDS('data/po_dat_long.rds')
@@ -20,14 +20,14 @@ An NBA playoff series is a set of games played until one team wins four games. T
 
 # Data Exploration
 
-Before building any models, let's look at the how a playoff series evolves. For a series that lasts 
+Before building any models, let's look at the how a playoff series evolves. Interestingly, game 2 is the most correlated with winning a series than any game (besides the deciding game, of course). For a series that lasts 5 games, the team that won game 2 won the series roughly 90% of the time. For a series that lasts 6 games, the team that won game 2 won the series about 65% of the time. 
 
 ```{r}
 prepender <- function(string, prefix = "Game ") paste0(prefix, string)
 
 plot_series_correlation <- function(data, n_games_series){
   data %>%
-    filter(series_length == n_games_series, win) %>%
+    filter(series_length == n_games_series, win, name == 'home_team') %>%
     ggplot(aes(x = win, fill = won_series, group = won_series)) +
     geom_bar(position = "fill") +
     facet_wrap(vars(game_num), nrow = 1, labeller = as_labeller(prepender)) +
@@ -53,36 +53,59 @@ po_dat_long %>%
   plot_series_correlation(7)
 
 ```
+# Linear Probability Model - First Pass
+
+We can model a playoff series with a linear model where we predict the outcome of a series and include indicator functions for whether a game was won or lost.
+
+$$winSeries = \beta_0 + \Sigma_{i=1}^6 \beta_iWonGame_i + \epsilon  $$
+Our first-pass model again tells us that winning game 2 has the greatest marginal effect of winning a series. The issue with this model is that a lot of series end before 6 games have been played, and any playoff series with fewer than 6 games will get thrown out of our regression.
 
 ```{r}
 #basic linear probability
 
 po_dat_wide %>%
+  lm(data= ., won_series ~ game_1 + game_2 + game_3 + game_4 + game_5 + game_6) %>%
+  broom::tidy() 
+```
+
+For the next pass of the model, we restrict the sample to 4, 5, 6 and 7 game series and estimate separate regressions for each of those series lengths. We run into estimation problems galore with this approach. For a 4 game series, winning any single game means the series is already decided. And for a 5 game series, once we know the first 4 games and know that the series is 5 games long, we know perfectly well which team will win the series.
+
+```{r}
+po_dat_wide %>%
   filter(series_length == 4) %>%
-  lm(data= ., won_series ~ game_1 + game_2 + game_3)
+  lm(data= ., won_series ~ game_1 + game_2 + game_3) %>%
+  broom::tidy() 
+
 
 po_dat_wide %>%
   filter(series_length == 5) %>%
-  lm(data= ., won_series ~ game_1 + game_2 + game_3 + game_4)
-
+  lm(data= ., won_series ~ game_1 + game_2 + game_3 + game_4) %>%
+  broom::tidy() 
+  
 po_dat_wide %>%
   filter(series_length == 6) %>%
-  lm(data= ., won_series ~ game_1 + game_2 + game_3 + game_4 + game_5)
-
-po_dat_wide %>%
-  filter(series_length == 7) %>%
-  lm(data= ., won_series ~ game_1 + game_2 + game_3 + game_4 + game_5 + game_6)
+  lm(data= ., won_series ~ game_1 + game_2 + game_3 +  game_4 + game_5) %>%
+  broom::tidy() 
 ```
+
+There is probably a more clever regression framework that would help explain us examine playoff series, but a Bayesian analysis sidesteps many of our previous issues.
+
+
+# Reframing the Problem
+
+
 
 ```{r}
 
 game7_series <- po_dat_wide %>%
-  filter(series_length == 7)
+  filter(series_length == 5) %>%
+  select(-game_6, -game_6, -game_7)
 
-game_2_model <- gamlss::gamlss(won_series ~ game_1 + game_2 
+game_2_model <- gamlss::gamlss(won_series ~ game_1 + game_2 + game_3  + game_4
                , data = game7_series
-               , link = NB())
+               , link = BI(mu.link=probit))
 mu_coefs <- game_2_model$mu.coefficients
+mu_coefs
 game_2_model$sigma.coefficients
 
 predict(game_2_model, newdata = tribble( ~game_1, ~game_2,  TRUE, TRUE))
