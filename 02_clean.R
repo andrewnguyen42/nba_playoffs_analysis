@@ -123,11 +123,12 @@ po_dat_long <- dat %>%
   mutate(series_length = max(game_num)
          , won_series = nwins > series_length/2) %>%
   group_by(series, season) %>%
-  filter(!any(won_series & nwins == 3))
+  filter(!any(won_series & nwins == 3)) %>%
+  mutate(p_win = 1/(10^(-(team_elo-opponent_elo)/400) + 1)) 
 
 po_dat_wide <- po_dat_long %>%
-  select(season = season, series, team, game_num, win, series_length, won_series) %>%
-  pivot_wider(names_from = game_num, values_from = win, names_prefix = "game_") %>%
+  select(season = season, series, team, game_num, win, series_length, won_series, p_win) %>%
+  pivot_wider(names_from = game_num, values_from = c(win, p_win), names_prefix = "game_") %>%
   group_by(series, season) %>%
   sample_n(1) 
 
