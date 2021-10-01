@@ -8,15 +8,20 @@ knitr::opts_chunk$set(echo = FALSE)
 library(ggplot2)
 #library(gamlss)
 library(dplyr)
+library(tidyr)
 
 po_dat_long <- readRDS('data/po_dat_long.rds')
 po_dat_wide <- readRDS('data/po_dat_wide.rds')
+
+result <- 3
 
 ```
 
 # Background
 
 An NBA playoff series is a set of games played until one team wins four games. The maximum number of games in a series is seven since both teams could win three games apiece and the seventh game is the series-deciding game. We refer to this structure as a "best of seven series." In this presentation, we'll be modeling the impact of winning a single game on the overall probability of winning a series. We'll also examine how we can approach this model a frequentist and Bayesian perspective.
+
+this is my result `r result`
 
 # Data Exploration
 
@@ -64,7 +69,7 @@ Our first-pass model again tells us that winning game 2 has the greatest margina
 #basic linear probability
 
 po_dat_wide %>%
-  lm(data= ., won_series ~ game_1 + game_2 + game_3 + game_4 + game_5 + game_6) %>%
+  lm(data= ., won_series ~ win_game_1 + win_game_2 + win_game_3 + win_game_4 + win_game_5 + win_game_6) %>%
   broom::tidy() 
 ```
 
@@ -103,17 +108,17 @@ There is probably a more clever regression framework that would help explain us 
 ```{r}
 
 game7_series <- po_dat_wide %>%
-  filter(series_length == 5) %>% select_if(~sum(!is.na(.)) > 0)
+  filter(series_length == 6) %>% select_if(~sum(!is.na(.)) > 0)
 
 game_2_model <- gamlss::gamlss(won_series ~ win_game_1 + win_game_2 + p_win_game_1
                , data = game7_series
-               , link = BI())
+               , link = BB(mu.link = 'log'))
 mu_coefs <- game_2_model$mu.coefficients
 mu_coefs
 game_2_model$sigma.coefficients
 
 lm_model <- po_dat_wide %>%
-  filter(series_length == 5) %>%
+  filter(series_length == 6) %>%
   lm(data= ., won_series ~  win_game_1 + win_game_2  + p_win_game_1) 
 
 predict_data <- tribble(~id, ~win_game_1, ~win_game_2, ~p_win_game_1
@@ -123,11 +128,11 @@ predict_data <- tribble(~id, ~win_game_1, ~win_game_2, ~p_win_game_1
 
 fitted_distributions <- predict_data %>%
   mutate(fitted = predict(game_2_model, newdata = predict_data %>% select(-id))
-         , fitted_lm = predict(lm_model, predict_data))%>%
+         , fitted_lm = predict(lm_model, predict_data %>% select(-id))) %>%
   mutate(sigma = exp(game_2_model$sigma.coefficients)
          , alpha = fitted/sigma
          , beta = (1-fitted)/sigma
-         , posterior_probability = pbinom(q = 5, size = 7, prob = fitted, lower.tail = FALSE) ) 
+         , posterior_probability = pbinom(q = 4 - 2, size = 7 - 2, prob = fitted, lower.tail = FALSE) ) 
 
 #how prior distribution of win probability changes
 fitted_distributions %>%
