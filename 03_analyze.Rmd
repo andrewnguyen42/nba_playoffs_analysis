@@ -104,6 +104,7 @@ There is probably a more clever regression framework that would help explain us 
 
 # Reframing the Problem
 
+We should think about our problem as
 
 ```{r}
 
@@ -112,7 +113,7 @@ game7_series <- po_dat_wide %>%
 
 game_2_model <- gamlss::gamlss(won_series ~ win_game_1 + win_game_2 + p_win_game_1
                , data = game7_series
-               , link = BB(mu.link = 'log'))
+               , link = BNB())
 mu_coefs <- game_2_model$mu.coefficients
 mu_coefs
 game_2_model$sigma.coefficients
@@ -121,18 +122,18 @@ lm_model <- po_dat_wide %>%
   filter(series_length == 6) %>%
   lm(data= ., won_series ~  win_game_1 + win_game_2  + p_win_game_1) 
 
-predict_data <- tribble(~id, ~win_game_1, ~win_game_2, ~p_win_game_1
-                  ,'WL',TRUE, FALSE, .5
-                  ,'LW', FALSE, TRUE, .5
-                  ,'WW',TRUE, TRUE, .5)
+predict_data <- tribble(~id, ~win_game_1, ~win_game_2, ~p_win_game_1, ~n_wins
+                  ,'WL',TRUE, FALSE, .5, 1
+                  ,'LW', FALSE, TRUE, .5, 1
+                  ,'WW',TRUE, TRUE, .5, 2) 
 
 fitted_distributions <- predict_data %>%
-  mutate(fitted = predict(game_2_model, newdata = predict_data %>% select(-id))
+  mutate(fitted = predict(game_2_model, newdata = predict_data %>% select(-id, -n_wins))
          , fitted_lm = predict(lm_model, predict_data %>% select(-id))) %>%
   mutate(sigma = exp(game_2_model$sigma.coefficients)
          , alpha = fitted/sigma
          , beta = (1-fitted)/sigma
-         , posterior_probability = pbinom(q = 4 - 2, size = 7 - 2, prob = fitted, lower.tail = FALSE) ) 
+         , posterior_probability = pnbinom(q = 4 - n_wins, size = 7 - 2, prob = fitted) ) 
 
 #how prior distribution of win probability changes
 fitted_distributions %>%
