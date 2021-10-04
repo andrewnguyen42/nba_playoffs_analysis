@@ -104,28 +104,41 @@ There is probably a more clever regression framework that would help explain us 
 
 # Reframing the Problem
 
-We should think about our problem as
+We should think about our problem as a negative binomial distribution.
 
 ```{r}
 
-game7_series <- po_dat_wide %>%
-  filter(series_length == 6) %>% select_if(~sum(!is.na(.)) > 0)
+n_games <- 6
+games_played <- 2
 
-game_2_model <- gamlss::gamlss(won_series ~ win_game_1 + win_game_2 + p_win_game_1
+game7_series <- po_dat_wide %>%
+  filter(series_length == n_games) %>% select_if(~sum(!is.na(.)) > 0)
+
+win_col_names <- grep("^win_game_", names(game7_series), value = TRUE)[1:games_played]
+
+form <- reformulate(c(win_col_names, 'p_win_game_1'), response = "won_series")
+
+
+
+game_2_model <- gamlss::gamlss(form
                , data = game7_series
                , link = BNB())
 mu_coefs <- game_2_model$mu.coefficients
 mu_coefs
 game_2_model$sigma.coefficients
 
+
 lm_model <- po_dat_wide %>%
   filter(series_length == 6) %>%
-  lm(data= ., won_series ~  win_game_1 + win_game_2  + p_win_game_1) 
+  lm(data = ., won_series ~  win_game_1 + win_game_2  + p_win_game_1) 
 
-predict_data <- tribble(~id, ~win_game_1, ~win_game_2, ~p_win_game_1, ~n_wins
-                  ,'WL',TRUE, FALSE, .5, 1
-                  ,'LW', FALSE, TRUE, .5, 1
-                  ,'WW',TRUE, TRUE, .5, 2) 
+
+predict_data <- expand.grid(replicate(games_played, c(TRUE, FALSE), simplify = FALSE)) %>%
+  magrittr::set_colnames(win_col_names) %>%
+  unite(col = id, everything(), remove = FALSE) %>%
+  mutate(id = reduce2(c('TRUE', 'FALSE', '_'), c('W', 'L', ''),  .init = id, str_replace_all)
+         , n_wins = str_count(id, pattern = "W")
+         , p_win_game_1 = .5)
 
 fitted_distributions <- predict_data %>%
   mutate(fitted = predict(game_2_model, newdata = predict_data %>% select(-id, -n_wins))
@@ -133,7 +146,7 @@ fitted_distributions <- predict_data %>%
   mutate(sigma = exp(game_2_model$sigma.coefficients)
          , alpha = fitted/sigma
          , beta = (1-fitted)/sigma
-         , posterior_probability = pnbinom(q = 4 - n_wins, size = 7 - 2, prob = fitted) ) 
+         , posterior_probability = pnbinom(q = 4 - n_wins, size = 7 - games_played, prob = fitted) ) 
 
 #how prior distribution of win probability changes
 fitted_distributions %>%
