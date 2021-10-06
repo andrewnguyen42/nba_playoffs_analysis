@@ -104,7 +104,20 @@ There is probably a more clever regression framework that would help explain us 
 
 # Reframing the Problem
 
-We should think about our problem as a negative binomial distribution.
+The negative binomial distribution is based on an experiment satisfying the following conditions:
+
+1. The experiment consists of a sequence of independent trials.
+2. Each trial can result in either a success or a failure.
+3. The probability of success $p$ is constant from trial to trial
+4. The experiment continues until a total of $r$ successes have been observed
+
+$$    nb(k; r, p) \equiv \Pr(X = k) = \binom{k+r-1}{r-1} (1-p)^kp^r$$
+
+Consider nb(n = 4; r = 7, p = .5) = P(X = 3), the probability that exactly 3 losses occur before the 7th game and your probability of winning each game is 50%.
+
+`pnbinom(3, 7, .5) = .2744 `
+
+We should think about our problem as a negative binomial distribution. Given $k$ remaining games in the series, what is the likelihood that you win $r$ games? 
 
 ```{r}
 
@@ -117,8 +130,6 @@ game7_series <- po_dat_wide %>%
 win_col_names <- grep("^win_game_", names(game7_series), value = TRUE)[1:games_played]
 
 form <- reformulate(c(win_col_names, 'p_win_game_1'), response = "won_series")
-
-
 
 game_2_model <- gamlss::gamlss(form
                , data = game7_series
