@@ -9,6 +9,8 @@ library(ggplot2)
 #library(gamlss)
 library(dplyr)
 library(tidyr)
+library(purrr)
+library(stringr)
 
 po_dat_long <- readRDS('data/po_dat_long.rds')
 po_dat_wide <- readRDS('data/po_dat_wide.rds')
@@ -113,51 +115,49 @@ The negative binomial distribution is based on an experiment satisfying the foll
 
 $$    nb(k; r, p) \equiv \Pr(X = k) = \binom{k+r-1}{r-1} (1-p)^kp^r$$
 
-Consider nb(n = 4; r = 7, p = .5) = P(X = 3), the probability that exactly 3 losses occur before the 7th game and your probability of winning each game is 50%.
+Consider nb(x > 3; r = 7, p = .55) = P(X > 3), the probability that at least 3 losses occur before the 7th game and the probability of winning each game is 55%.
 
-`pnbinom(3, 7, .5) = .2744 `
+`1 - pnbinom(3, 7, 1 - .55, lower.tail = FALSE) = .6082 `
 
-We should think about our problem as a negative binomial distribution. Given $k$ remaining games in the series, what is the likelihood that you win $r$ games? 
+We should think about the outcomes of an NBA series as a negative binomial distribution. Given $r$ remaining games in the series and probability of winning a single game $p$, what is the likelihood that you win $k$ games? 
 
 ```{r}
-
 n_games <- 6
 games_played <- 2
 
-game7_series <- po_dat_wide %>%
+game_series <- po_dat_wide %>%
   filter(series_length == n_games) %>% select_if(~sum(!is.na(.)) > 0)
 
-win_col_names <- grep("^win_game_", names(game7_series), value = TRUE)[1:games_played]
+win_col_names <- grep("^win_game_", names(game_series), value = TRUE)[1:games_played]
 
 form <- reformulate(c(win_col_names, 'p_win_game_1'), response = "won_series")
 
-game_2_model <- gamlss::gamlss(form
-               , data = game7_series
+normal_binomial_model <- glm(form
+                             , data = game_series
+                             , family = binomial())
+
+beta_binomial_model <- gamlss::gamlss(form
+               , data = game_series
                , link = BNB())
-mu_coefs <- game_2_model$mu.coefficients
+mu_coefs <- beta_binomial_model$mu.coefficients
 mu_coefs
-game_2_model$sigma.coefficients
-
-
-lm_model <- po_dat_wide %>%
-  filter(series_length == 6) %>%
-  lm(data = ., won_series ~  win_game_1 + win_game_2  + p_win_game_1) 
-
+beta_binomial_model$sigma.coefficients
 
 predict_data <- expand.grid(replicate(games_played, c(TRUE, FALSE), simplify = FALSE)) %>%
   magrittr::set_colnames(win_col_names) %>%
   unite(col = id, everything(), remove = FALSE) %>%
   mutate(id = reduce2(c('TRUE', 'FALSE', '_'), c('W', 'L', ''),  .init = id, str_replace_all)
          , n_wins = str_count(id, pattern = "W")
+         , n_losses = games_played - n_wins
          , p_win_game_1 = .5)
 
 fitted_distributions <- predict_data %>%
-  mutate(fitted = predict(game_2_model, newdata = predict_data %>% select(-id, -n_wins))
-         , fitted_lm = predict(lm_model, predict_data %>% select(-id))) %>%
-  mutate(sigma = exp(game_2_model$sigma.coefficients)
+  mutate(fitted = predict(beta_binomial_model, newdata = predict_data %>% select(-id, -n_wins, -n_losses))
+         , fitted_lm = predict(normal_binomial_model, predict_data %>% select(-id), type = 'response')) %>%
+  mutate(sigma = exp(beta_binomial_model$sigma.coefficients)
          , alpha = fitted/sigma
          , beta = (1-fitted)/sigma
-         , posterior_probability = pnbinom(q = 4 - n_wins, size = 7 - games_played, prob = fitted) ) 
+         , posterior_probability = 1- pnbinom(q = 3 - n_losses, size = 7 - games_played, prob = 1 - fitted, lower.tail = FALSE) ) 
 
 #how prior distribution of win probability changes
 fitted_distributions %>%
