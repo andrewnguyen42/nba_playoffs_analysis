@@ -11,6 +11,7 @@ library(dplyr)
 library(tidyr)
 library(purrr)
 library(stringr)
+library(rstanarm)
 
 po_dat_long <- readRDS('data/po_dat_long.rds')
 po_dat_wide <- readRDS('data/po_dat_wide.rds')
@@ -113,7 +114,7 @@ The negative binomial distribution is based on an experiment satisfying the foll
 3. The probability of success $p$ is constant from trial to trial
 4. The experiment continues until a total of $r$ successes have been observed
 
-$$    nb(k; r, p) \equiv \Pr(X = k) = \binom{k+r-1}{r-1} (1-p)^kp^r$$
+$$nb(k; r, p) \equiv \Pr(X = k) = \binom{k+r-1}{r-1} (1-p)^kp^r$$
 
 Consider nb(x > 3; r = 7, p = .55) = P(X > 3), the probability that at least 3 losses occur before the 7th game and the probability of winning each game is 55%.
 
@@ -121,27 +122,51 @@ Consider nb(x > 3; r = 7, p = .55) = P(X > 3), the probability that at least 3 l
 
 We should think about the outcomes of an NBA series as a negative binomial distribution. Given $r$ remaining games in the series and probability of winning a single game $p$, what is the likelihood that you win $k$ games? 
 
+# The binomial model for p
+
+We can model $p$ using a generalized linear model (maybe this is overkill and we just talk about the logistic regression)
+
+The GLM consists of three elements:
+1. An exponential family of probability distributions.
+2. A linear predictor $\eta = X \beta$
+3. A link function $g$ such that $E(Y \mid X) = p = g^{-1}(\eta)$
+
+The logistic regression we choose after playing $n$ games is 
+
+$$p=\frac{\exp(\beta_0 + \sum_{i=1}^n \beta_iWonGame_i)}{1 + \exp(\beta_0 + \sum_{i=1}^n \beta_iWonGame_i)}$$
+* probably skip the beta-distribution stuff since it's only a 30-minute presentation
+
+
+
 ```{r}
 n_games <- 6
 games_played <- 2
 
-game_series <- po_dat_wide %>%
+build_binomial_model <- function(n_games, games_played, model_type = 'normal'){
+  game_series <- po_dat_wide %>%
   filter(series_length == n_games) %>% select_if(~sum(!is.na(.)) > 0)
 
-win_col_names <- grep("^win_game_", names(game_series), value = TRUE)[1:games_played]
+  win_col_names <- grep("^win_game_", names(game_series), value = TRUE)[1:games_played]
+  
+  form <- reformulate(c( win_col_names),  response = "won_series")
 
-form <- reformulate(c(win_col_names, 'p_win_game_1'), response = "won_series")
+  model <- NULL
+  
+  if(model_type == 'normal')
+    model <- glm(form , data = game_series, family = binomial())
+  
+  if(model_type == 'beta')
+    model <- gamlss::gamlss(form, data = game_series, link = BB())
+  
+  if(model_type == 'bayes')
+    model <- stan_glm(form, data = game_series, family = binomial(link = 'logit'))
+  
+  model
+  
+}
 
-normal_binomial_model <- glm(form
-                             , data = game_series
-                             , family = binomial())
-
-beta_binomial_model <- gamlss::gamlss(form
-               , data = game_series
-               , link = BNB())
-mu_coefs <- beta_binomial_model$mu.coefficients
-mu_coefs
-beta_binomial_model$sigma.coefficients
+beta_normal_model <- build_binomial_model(n_games, games_played, 'normal')
+beta_binomial_model <- build_binomial_model(n_games, games_played, 'beta')
 
 predict_data <- expand.grid(replicate(games_played, c(TRUE, FALSE), simplify = FALSE)) %>%
   magrittr::set_colnames(win_col_names) %>%
@@ -152,18 +177,58 @@ predict_data <- expand.grid(replicate(games_played, c(TRUE, FALSE), simplify = F
          , p_win_game_1 = .5)
 
 fitted_distributions <- predict_data %>%
-  mutate(fitted = predict(beta_binomial_model, newdata = predict_data %>% select(-id, -n_wins, -n_losses))
-         , fitted_lm = predict(normal_binomial_model, predict_data %>% select(-id), type = 'response')) %>%
-  mutate(sigma = exp(beta_binomial_model$sigma.coefficients)
-         , alpha = fitted/sigma
-         , beta = (1-fitted)/sigma
-         , posterior_probability = 1- pnbinom(q = 3 - n_losses, size = 7 - games_played, prob = 1 - fitted, lower.tail = FALSE) ) 
+  mutate(fitted_beta = predict(beta_binomial_model, newdata = predict_data %>% select(-id, -n_wins, -n_losses))
+         , fitted_normal = predict(normal_binomial_model, predict_data %>% select(-id), type = 'response')) %>%
+  mutate(sigma_beta = exp(beta_binomial_model$sigma.coefficients)
+         , sigma_normal = exp(sigma(normal_binomial_model))
+         , alpha = fitted_beta/sigma_beta
+         , beta = (1-fitted_beta)/sigma_beta
+         , posterior_probability = 1- pnbinom(q = 3 - n_losses, size = 7 - games_played, prob = 1 - fitted_beta, lower.tail = FALSE) ) 
 
-#how prior distribution of win probability changes
+#how prior distribution of win probability changes 
 fitted_distributions %>%
-  crossing(x = seq(.01, .99, length.out = 100)) %>%
-  mutate(prior_density = dbeta(x, alpha, beta)) %>%
-  ggplot(aes(x = x, y = prior_density, colour = id)) +
+  crossing(x = seq(-5, 5, length.out = 100)) %>%
+  mutate(prior_density_beta = dbeta(x, alpha, beta)
+         , prior_density_normal = dnorm(x, fitted_normal, sd = sigma_normal)) %>%
+  ggplot(aes(x = x, y = prior_density_normal, colour = id)) +
   geom_line()
+
+```
+
+# Bayesian Regression
+
+* same setup as logistic regression
+* how to integrate ELO p_win_game_1?
+* write-up on advantages of bayes methodology
+
+```{r}
+
+beta_normal_model_bayes <- build_binomial_model(n_games, games_played, 'bayes')
+
+bayes_coefs %>% View
+
+summary(bayes_logistic_model)
+prior_summary(bayes_logistic_model)
+broom.mixed::tidy(bayes_logistic_model)
+posterior_interval(bayes_logistic_model)
+
+bayes_coefs <- map_df(1:5 ,function(games_played){
+  model <- build_binomial_model(6, games_played, 'bayes')
+  broom.mixed::tidy(model)
+}, .id = 'games_played')
+
+#posterior predict generates a bunch of simulations, so the prediction is the proportion of simulations that are success
+bayes_proportion <- posterior_predict(bayes_logistic_model) %>% 
+  data.frame() %>%
+  pivot_longer(everything()) %>%
+  group_by(name) %>%
+  summarise(prop = sum(value)/n()) %>%
+  mutate(n = readr::parse_number(name)) %>%
+  arrange(n) %>%
+  pull(prop)
+
+beta_normal_model_bayes$data %>%
+  ungroup() %>%
+  mutate(bayes_prop = bayes_prop)
 
 ```
