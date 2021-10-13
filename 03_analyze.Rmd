@@ -168,6 +168,10 @@ build_binomial_model <- function(n_games, games_played, model_type = 'normal'){
 beta_normal_model <- build_binomial_model(n_games, games_played, 'normal')
 beta_binomial_model <- build_binomial_model(n_games, games_played, 'beta')
 
+game_series <- po_dat_wide %>%
+  filter(series_length == n_games) %>% select_if(~sum(!is.na(.)) > 0)
+win_col_names <- grep("^win_game_", names(game_series), value = TRUE)[1:games_played]
+
 predict_data <- expand.grid(replicate(games_played, c(TRUE, FALSE), simplify = FALSE)) %>%
   magrittr::set_colnames(win_col_names) %>%
   unite(col = id, everything(), remove = FALSE) %>%
@@ -178,9 +182,9 @@ predict_data <- expand.grid(replicate(games_played, c(TRUE, FALSE), simplify = F
 
 fitted_distributions <- predict_data %>%
   mutate(fitted_beta = predict(beta_binomial_model, newdata = predict_data %>% select(-id, -n_wins, -n_losses))
-         , fitted_normal = predict(normal_binomial_model, predict_data %>% select(-id), type = 'response')) %>%
+         , fitted_normal = predict(beta_normal_model, predict_data %>% select(-id), type = 'response')) %>%
   mutate(sigma_beta = exp(beta_binomial_model$sigma.coefficients)
-         , sigma_normal = exp(sigma(normal_binomial_model))
+         , sigma_normal = exp(sigma(beta_normal_model))
          , alpha = fitted_beta/sigma_beta
          , beta = (1-fitted_beta)/sigma_beta
          , posterior_probability = 1- pnbinom(q = 3 - n_losses, size = 7 - games_played, prob = 1 - fitted_beta, lower.tail = FALSE) ) 
@@ -205,12 +209,10 @@ fitted_distributions %>%
 
 beta_normal_model_bayes <- build_binomial_model(n_games, games_played, 'bayes')
 
-bayes_coefs %>% View
-
-summary(bayes_logistic_model)
-prior_summary(bayes_logistic_model)
-broom.mixed::tidy(bayes_logistic_model)
-posterior_interval(bayes_logistic_model)
+summary(beta_normal_model_bayes)
+prior_summary(beta_normal_model_bayes)
+broom.mixed::tidy(beta_normal_model_bayes)
+posterior_interval(beta_normal_model_bayes)
 
 bayes_coefs <- map_df(1:5 ,function(games_played){
   model <- build_binomial_model(6, games_played, 'bayes')
@@ -218,7 +220,7 @@ bayes_coefs <- map_df(1:5 ,function(games_played){
 }, .id = 'games_played')
 
 #posterior predict generates a bunch of simulations, so the prediction is the proportion of simulations that are success
-bayes_proportion <- posterior_predict(bayes_logistic_model) %>% 
+bayes_proportion <- posterior_predict(beta_normal_model_bayes) %>% 
   data.frame() %>%
   pivot_longer(everything()) %>%
   group_by(name) %>%
@@ -229,6 +231,6 @@ bayes_proportion <- posterior_predict(bayes_logistic_model) %>%
 
 beta_normal_model_bayes$data %>%
   ungroup() %>%
-  mutate(bayes_prop = bayes_prop)
+  mutate(bayes_prop = bayes_proportion)
 
 ```
