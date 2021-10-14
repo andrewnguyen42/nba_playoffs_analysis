@@ -16,15 +16,11 @@ library(rstanarm)
 po_dat_long <- readRDS('data/po_dat_long.rds')
 po_dat_wide <- readRDS('data/po_dat_wide.rds')
 
-result <- 3
-
 ```
 
 # Background
 
 An NBA playoff series is a set of games played until one team wins four games. The maximum number of games in a series is seven since both teams could win three games apiece and the seventh game is the series-deciding game. We refer to this structure as a "best of seven series." In this presentation, we'll be modeling the impact of winning a single game on the overall probability of winning a series. We'll also examine how we can approach this model a frequentist and Bayesian perspective.
-
-this is my result `r result`
 
 # Data Exploration
 
@@ -33,24 +29,40 @@ Before building any models, let's look at the how a playoff series evolves. Inte
 ```{r}
 prepender <- function(string, prefix = "Game ") paste0(prefix, string)
 
-plot_series_correlation <- function(data, n_games_series){
-  data %>%
-    filter(series_length == n_games_series, win, name == 'home_team') %>%
-    ggplot(aes(x = win, fill = won_series, group = won_series)) +
+#don't filter on series length but plot by number of games played
+#focus on first three games
+
+plot_series_correlation <- function(data, n_games_played){
+   data %>%
+    filter(game_num <= n_games_played) %>%
+    group_by(series, season, team) %>%
+    arrange(series, season, team) %>%
+    mutate(won_game_n = last(win)) %>%
+    nest() %>%
+    group_by(season, series) %>%
+    slice_sample(n = 1) %>% # randomly select a team since data comes in pairs
+    unnest(cols = c(data)) %>%
+    filter(won_game_n) %>%
+    ggplot(aes(x = game_num, fill = win, group = win)) +
     geom_bar(position = "fill") +
-    facet_wrap(vars(game_num), nrow = 1, labeller = as_labeller(prepender)) +
-    theme(axis.title.x=element_blank(),
-          axis.text.x=element_blank(),
-          axis.ticks.x=element_blank()) +
+    scale_x_continuous(breaks = 1:n_games_played) +
     guides(fill = "none") +
-    ylab('Proportion of series won') +
-    scale_fill_manual(values = c('TRUE' = 'blue', 'FALSE' = 'NA'))
+    ylab('Proportion of games won') +
+    xlab('Game') +
+    scale_fill_manual(values = c('TRUE' = 'blue', 'FALSE' = 'NA')) +
+    ggtitle(paste0('Proportion of games won, conditional on winning game ', n_games_played))
+
 }
 
+po_dat_long %>%
+  plot_series_correlation(2) 
 
 po_dat_long %>%
-  plot_series_correlation(4)
+  plot_series_correlation(3) 
 
+po_dat_long %>%
+  plot_series_correlation(4) 
+  
 po_dat_long %>%
   plot_series_correlation(5)
 
@@ -70,6 +82,9 @@ Our first-pass model again tells us that winning game 2 has the greatest margina
 
 ```{r}
 #basic linear probability
+# regress g1, g2, g3
+# regress g1*g2
+# regress g1
 
 po_dat_wide %>%
   lm(data= ., won_series ~ win_game_1 + win_game_2 + win_game_3 + win_game_4 + win_game_5 + win_game_6) %>%
@@ -209,7 +224,7 @@ fitted_distributions %>%
 
 beta_normal_model_bayes <- build_binomial_model(n_games, games_played, 'bayes')
 
-summary(beta_normal_model_bayes)
+summary(beta_normal_model_bayes) #what is going on in mean PPD
 prior_summary(beta_normal_model_bayes)
 broom.mixed::tidy(beta_normal_model_bayes)
 posterior_interval(beta_normal_model_bayes)
@@ -218,6 +233,7 @@ bayes_coefs <- map_df(1:5 ,function(games_played){
   model <- build_binomial_model(6, games_played, 'bayes')
   broom.mixed::tidy(model)
 }, .id = 'games_played')
+
 
 #posterior predict generates a bunch of simulations, so the prediction is the proportion of simulations that are success
 bayes_proportion <- posterior_predict(beta_normal_model_bayes) %>% 
