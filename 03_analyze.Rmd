@@ -131,9 +131,9 @@ The negative binomial distribution is based on an experiment satisfying the foll
 
 $$nb(k; r, p) \equiv \Pr(X = k) = \binom{k+r-1}{r-1} (1-p)^kp^r$$
 
-Consider nb(x > 3; r = 7, p = .55) = P(X > 3), the probability that at least 3 losses occur before the 7th game and the probability of winning each game is 55%.
+Consider nb(x > 3; r = 4, p = .55) = P(X <= 3), the probability that at most 3 losses occur before 4 wins and the probability of winning each game is 55%.
 
-`1 - pnbinom(3, 7, 1 - .55, lower.tail = FALSE) = .6082 `
+`pnbinom(3, 4, .55, lower.tail = T) = .6082 `
 
 We should think about the outcomes of an NBA series as a negative binomial distribution. Given $r$ remaining games in the series and probability of winning a single game $p$, what is the likelihood that you win $k$ games? 
 

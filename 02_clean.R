@@ -124,13 +124,20 @@ po_dat_long <- dat %>%
          , won_series = nwins > series_length/2) %>%
   group_by(series, season) %>%
   filter(!any(won_series & nwins == 3)) %>%
-  mutate(p_win = 1/(10^(-(team_elo-opponent_elo)/400) + 1)) 
+  mutate(p_win = 1/(10^(-(team_elo-opponent_elo)/400) + 1),
+         elo_diff = team_elo - opponent_elo) 
 
 po_dat_wide <- po_dat_long %>%
-  select(season = season, series, team, game_num, win, series_length, won_series, p_win) %>%
-  pivot_wider(names_from = game_num, values_from = c(win, p_win), names_prefix = "game_") %>%
+  select(season, name, series, team, game_num, win, series_length, won_series, p_win, elo_diff) %>%
+  pivot_wider(names_from = game_num, values_from = c(name, win, p_win, elo_diff), names_prefix = "game_") %>%
   group_by(series, season) %>%
-  sample_n(1) 
+  filter(name_game_1 == "home_team") %>%
+  select(-starts_with("name_"))
+
+po_dat_long <- po_dat_long %>%
+  filter((name == "home_team" & game_num %in% c(1, 2, 5, 7)) | 
+           (name == "away_team" & game_num %in% c(3, 4, 6))) %>%
+  mutate(is_home_team = name=="home_team")
 
 saveRDS(po_dat_long, "data/po_dat_long.rds")
 saveRDS(po_dat_wide, "data/po_dat_wide.rds")

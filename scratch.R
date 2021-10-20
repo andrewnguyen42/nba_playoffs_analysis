@@ -1,137 +1,203 @@
-set.seed(1234)
+library(dplyr)
+library(ggplot2)
+library(MASS)
 
-# series-wise dataset
-po_series <- po_dat_long %>%
-  filter(game_num == 1) %>%
-  select(season, series, name, p_win, won_series) %>%
-  unique() %>%
-  mutate(is_home_team = name=="home_team") %>%
-  group_by(season, series) %>%
-  sample_n(1)
+# the higher seeded team won games about 63% of the time (seeding, not just home court adv)
+mean(po_dat_long$win)
 
-# select one outcome record per game (random team's perspective)
-po_games <- po_dat_long %>%
-  group_by(season, series, game_num) %>%
-  sample_n(1) %>%
-  mutate(is_home_team = name=="home_team")
+# but this is quite variable across game numbers - home court advantage
+po_dat_long %>%
+  group_by(game_num) %>%
+  summarize(p_win = mean(win, na.rm=T))
 
-# p(win | home team)
-# the home team won games about 63% of the time (seeding, not just home court adv)
-x <- glm(win ~ is_home_team, data=po_games, family="binomial")
-x
-1/(1+exp(-x$coefficients[1]-x$coefficients[2]))
+# according to elo, the higher seeded team should only have won about 58% of the time
+# but they play about 54% of games at home (hc adv)
+mean(po_dat_long$p_win)
+mean(po_dat_long$is_home_team)
+
 # the higher seeded team won the series about 75% of the time
-x <- glm(won_series ~ is_home_team, data=po_series, family="binomial")
-x
-1/(1+exp(-x$coefficients[1]-x$coefficients[2]))
+mean(po_dat_wide$won_series)
 
-# Elo-based p_win has a coefficient of approximately 1 in a linear regression
-x <- glm(win ~ p_win, data=po_games, family="gaussian")
+# Elo difference is a strong predictor of outcome
+x <- glm(win ~ elo_diff, data=po_dat_long, family="binomial")
 x
-# also validates well in a logistic model
-x <- glm(win ~ p_win, data=po_games, family="binomial")
-x
-1/(1+exp(-x$coefficients[1]-x$coefficients[2]*.5))
-1/(1+exp(-x$coefficients[1]-x$coefficients[2]*.2))
-1/(1+exp(-x$coefficients[1]-x$coefficients[2]*.8))
+summary(x)
+1/(1+exp(-x$coefficients[1]-x$coefficients[2]*-181))
+1/(1+exp(-x$coefficients[1]-x$coefficients[2]*0))
+1/(1+exp(-x$coefficients[1]-x$coefficients[2]*60))
+1/(1+exp(-x$coefficients[1]-x$coefficients[2]*335))
 
-# home court advantage still matters if we account for Elo
-x <- glm(win ~ p_win + is_home_team, data=po_games, family="binomial")
+# home court advantage still matters if we account for Elo - about 238 Elo points
+x <- glm(win ~ elo_diff + is_home_team, data=po_dat_long, family="binomial")
+x
+summary(x)
+1/(1+exp(-x$coefficients[1]-x$coefficients[3]*0))
+1/(1+exp(-x$coefficients[1]-x$coefficients[3]*1))
+# Elo has a higher coefficient at the series level than at the game level, as expected
+x <- glm(win ~ elo_diff, data=po_dat_long, family="binomial")
+x
+x <- glm(won_series ~ elo_diff_game_1, data=po_dat_wide, family="binomial")
 x
 
-# Elo (for game 1) at the series level is "more than linear" as expected
-x <- glm(won_series ~ p_win, data=po_series, family="binomial")
-x
-1/(1+exp(-x$coefficients[1]-x$coefficients[2]*.5))
-1/(1+exp(-x$coefficients[1]-x$coefficients[2]*.2))
-1/(1+exp(-x$coefficients[1]-x$coefficients[2]*.8))
-
-# How much advantage does Elo say the series home team typically has? About 60-40
-po_series %>%
+# How much advantage does 538's Elo model say the series home team typically has? About 60-40
+po_dat_wide %>%
   ungroup() %>%
-  filter(is_home_team) %>%
-  summarise(p_win = mean(p_win))
+  summarise(p_win = mean(p_win_game_1))
 
-# work with wide data
-po_dat_wide <- po_dat_long %>%
-  group_by(season, series, team) %>%
-  mutate(is_series_home_team = name[1]=="home_team") %>%  
-  ungroup() %>%
-  select(season, series, team, is_series_home_team, game_num, win, series_length, won_series, p_win) %>%
-  pivot_wider(names_from = game_num, values_from = c(win, p_win), names_prefix = "game_") %>%
-  group_by(series, season) %>%
-  sample_n(1) 
+###################
 
-# series home team wins about 75% of the time
-x <- glm(won_series ~ is_series_home_team, data=po_dat_wide, family="binomial")
-x
-1/(1+exp(-x$coefficients[1]-x$coefficients[2]))
+# prior probability distribution of series_win computed from negative binomial and game 1 p_win
+# increase game win probability by 9% to align distribution mean with empirical series win freq
+po_dat_wide1 <- po_dat_wide %>%
+  mutate(prior_p_series_win = pnbinom(3,4,p_win_game_1*1.09))
 
-# series win is "superlinear" in game 1 p_win
-x <- glm(won_series ~ p_win_game_1, data=po_dat_wide, family="binomial")
-x
-1/(1+exp(-x$coefficients[1]-x$coefficients[2]*.5))
-1/(1+exp(-x$coefficients[1]-x$coefficients[2]*.2))
-1/(1+exp(-x$coefficients[1]-x$coefficients[2]*.8))
+# estimate beta distribution coefficients for series win prior
+m <- MASS::fitdistr(po_dat_wide1$prior_p_series_win, dbeta,
+                    start = list(shape1 = 1, shape2 = 1))
+# beta estimates: 3.86, 1.24
+alpha0 <- m$estimate[1]
+beta0 <- m$estimate[2]
+# mean p(series_win) is 76%
+alpha0/(alpha0+beta0)
+# plot
+ggplot(po_dat_wide1) +
+  geom_histogram(aes(prior_p_series_win, y = ..density..), binwidth = .05) +
+  stat_function(fun = function(x) dbeta(x, alpha0, beta0), color = "red",
+                size = 1) +
+  xlab("Series win probability")
 
-# How much advantage does Elo say the series home team typically has? About 60-40
-x <- glm(p_win_game_1 ~ is_series_home_team, data=po_dat_wide, family="gaussian")
+# update: won game 1 (conditional series win prob: 83%)
+cond <- sum(po_dat_wide1$win_game_1)
+ws_cond <- sum(po_dat_wide1$win_game_1 & po_dat_wide1$won_series)
+alpha1 <- alpha0 + ws_cond
+beta1 <- beta0 + (cond - ws_cond)
+ggplot(po_dat_wide1) +
+  stat_function(fun = function(x) dbeta(x, alpha0, beta0), color = "red",
+                size = 1) +
+  stat_function(fun = function(x) dbeta(x, alpha1, beta1), color = "blue",
+                size = 1) +
+  xlab("Series win probability")
 
-# game 1 winner wins series about 71% of the time
-x <- glm(won_series ~ win_game_1, data=po_dat_wide, family="binomial")
-x
-1/(1+exp(-x$coefficients[1]-x$coefficients[2]))
 
-# game 2 winner wins series about 76% of the time
-x <- glm(won_series ~ win_game_2, data=po_dat_wide, family="binomial")
-x
-1/(1+exp(-x$coefficients[1]-x$coefficients[2]))
 
-# game 3 winner wins series about 76% of the time
-x <- glm(won_series ~ win_game_3, data=po_dat_wide, family="binomial")
-x
-1/(1+exp(-x$coefficients[1]-x$coefficients[2]))
+# update: won game 2 (conditional series win prob: 84%)
+cond <- sum(po_dat_wide1$win_game_2)
+ws_cond <- sum(po_dat_wide1$win_game_2 & po_dat_wide1$won_series)
+alpha2 <- alpha0 + ws_cond
+beta2 <- beta0 + (cond - ws_cond)
+ggplot(po_dat_wide1) +
+  stat_function(fun = function(x) dbeta(x, alpha0, beta0), color = "red",
+                size = 1) +
+  stat_function(fun = function(x) dbeta(x, alpha2, beta2), color = "blue",
+                size = 1) +
+  xlab("Series win probability")
 
-# games 1 and 2 seem more important than game 3
-x <- glm(won_series ~ win_game_1 + win_game_2 + win_game_3, data=po_dat_wide, family="binomial")
-x
+# update: won game 3 (conditional series win prob: 91%)
+cond <- sum(po_dat_wide1$win_game_3)
+ws_cond <- sum(po_dat_wide1$win_game_3 & po_dat_wide1$won_series)
+alpha3 <- alpha0 + ws_cond
+beta3 <- beta0 + (cond - ws_cond)
+ggplot(po_dat_wide1) +
+  stat_function(fun = function(x) dbeta(x, alpha0, beta0), color = "red",
+                size = 1) +
+  stat_function(fun = function(x) dbeta(x, alpha3, beta3), color = "blue",
+                size = 1) +
+  xlab("Series win probability")
 
-# but this effect goes away when we control for being the home team
-x <- glm(won_series ~ is_series_home_team + win_game_1 + win_game_2 + win_game_3, data=po_dat_wide, family="binomial")
-x
+# update: won game 4 (conditional series win prob: 92%)
+cond <- sum(po_dat_wide1$win_game_4)
+ws_cond <- sum(po_dat_wide1$win_game_4 & po_dat_wide1$won_series)
+alpha4 <- alpha0 + ws_cond
+beta4 <- beta0 + (cond - ws_cond)
+ggplot(po_dat_wide1) +
+  stat_function(fun = function(x) dbeta(x, alpha0, beta0), color = "red",
+                size = 1) +
+  stat_function(fun = function(x) dbeta(x, alpha4, beta4), color = "blue",
+                size = 1) +
+  xlab("Series win probability")
 
-# There is a benefit to being the series home team beyond Elo
-x <- glm(won_series ~ p_win_game_1 + is_series_home_team, data=po_dat_wide, family="binomial")
-x
-1/(1+exp(-x$coefficients[1]-x$coefficients[2]*.5 - x$coefficients[3]))
+ggplot(po_dat_wide1) +
+  stat_function(fun = function(x) dbeta(x, alpha1, beta1), color = "red",
+                size = 1) +
+  stat_function(fun = function(x) dbeta(x, alpha2, beta2), color = "blue",
+                size = 1) +
+  stat_function(fun = function(x) dbeta(x, alpha3, beta3), color = "green",
+                size = 1) +
+  stat_function(fun = function(x) dbeta(x, alpha4, beta4), color = "purple",
+                size = 1) +
+  xlab("Series win probability")
 
-# combined effects
-x <- glm(won_series ~ p_win_game_1 + is_series_home_team + win_game_1 + win_game_2 + win_game_3, data=po_dat_wide, family="binomial")
-x
-1/(1+exp(-x$coefficients[1]-x$coefficients[2]*.5 - x$coefficients[3] - x$coefficients[4] - x$coefficients[5] - x$coefficients[6]))
-summary(x)
+# update: lost game 1 (conditional series win prob: 54%)
+cond <- sum(!po_dat_wide1$win_game_1)
+ws_cond <- sum(!po_dat_wide1$win_game_1 & po_dat_wide1$won_series)
+alpha1l <- alpha0 + ws_cond
+beta1l <- beta0 + (cond - ws_cond)
+ggplot(po_dat_wide1) +
+  stat_function(fun = function(x) dbeta(x, alpha0, beta0), color = "red",
+                size = 1) +
+  stat_function(fun = function(x) dbeta(x, alpha1, beta1), color = "blue",
+                size = 1) +
+  stat_function(fun = function(x) dbeta(x, alpha1l, beta1l), color = "green",
+                size = 1) +
+  xlab("Series win probability")
 
-# interaction effects
-x <- glm(won_series ~ 
-           p_win_game_1 + 
-           is_series_home_team + 
-           win_game_1 + 
-           win_game_2 + 
-           win_game_3 + 
-           is_series_home_team*win_game_1 +
-           is_series_home_team*win_game_2 +
-           is_series_home_team*win_game_3, 
-         data=po_dat_wide, family="binomial")
-summary(x)
+# update: WL (conditional series win prob: 60%)
+cond <- sum(po_dat_wide1$win_game_1 & !po_dat_wide1$win_game_2)
+ws_cond <- sum(po_dat_wide1$win_game_1 & !po_dat_wide1$win_game_2 & po_dat_wide1$won_series)
+alphaWL <- alpha0 + ws_cond
+betaWL <- beta0 + (cond - ws_cond)
+ggplot(po_dat_wide1) +
+  stat_function(fun = function(x) dbeta(x, alpha0, beta0), color = "red",
+                size = 1) +
+  stat_function(fun = function(x) dbeta(x, alphaWL, betaWL), color = "blue",
+                size = 1) +
+  xlab("Series win probability")
 
-x <- glm(won_series ~ 
-           p_win_game_1 + 
-           is_series_home_team + 
-           win_game_1 + 
-           win_game_2 + 
-           win_game_3 + 
-           win_game_1*win_game_2 +
-           win_game_2*win_game_3 +
-           win_game_1*win_game_3, 
-         data=po_dat_wide, family="binomial")
-summary(x)
+# update: LW (conditional series win prob: 65%)
+cond <- sum(!po_dat_wide1$win_game_1 & po_dat_wide1$win_game_2)
+ws_cond <- sum(!po_dat_wide1$win_game_1 & po_dat_wide1$win_game_2 & po_dat_wide1$won_series)
+alphaLW <- alpha0 + ws_cond
+betaLW <- beta0 + (cond - ws_cond)
+ggplot(po_dat_wide1) +
+  stat_function(fun = function(x) dbeta(x, alpha0, beta0), color = "red",
+                size = 1) +
+  stat_function(fun = function(x) dbeta(x, alphaWL, betaWL), color = "blue",
+                size = 1) +
+  xlab("Series win probability")
+
+# update: WW (conditional series win prob: 92%)
+cond <- sum(po_dat_wide1$win_game_1 & po_dat_wide1$win_game_2)
+ws_cond <- sum(po_dat_wide1$win_game_1 & po_dat_wide1$win_game_2 & po_dat_wide1$won_series)
+alphaWW <- alpha0 + ws_cond
+betaWW <- beta0 + (cond - ws_cond)
+ggplot(po_dat_wide1) +
+  stat_function(fun = function(x) dbeta(x, alpha0, beta0), color = "red",
+                size = 1) +
+  stat_function(fun = function(x) dbeta(x, alphaWW, betaWW), color = "blue",
+                size = 1) +
+  xlab("Series win probability")
+
+# update: LL (conditional series win prob: 13%)
+cond <- sum(!po_dat_wide1$win_game_1 & !po_dat_wide1$win_game_2)
+ws_cond <- sum(!po_dat_wide1$win_game_1 & !po_dat_wide1$win_game_2 & po_dat_wide1$won_series)
+alphaLL <- alpha0 + ws_cond
+betaLL <- beta0 + (cond - ws_cond)
+ggplot(po_dat_wide1) +
+  stat_function(fun = function(x) dbeta(x, alpha0, beta0), color = "red",
+                size = 1) +
+  stat_function(fun = function(x) dbeta(x, alphaLL, betaLL), color = "blue",
+                size = 1) +
+  xlab("Series win probability")
+
+ggplot(po_dat_wide1) +
+  stat_function(fun = function(x) dbeta(x, alpha0, beta0), color = "black",
+                size = 1) +
+  stat_function(fun = function(x) dbeta(x, alphaWL, betaWL), color = "red",
+                size = 1) +
+  stat_function(fun = function(x) dbeta(x, alphaLW, betaLW), color = "blue",
+                size = 1) +
+  stat_function(fun = function(x) dbeta(x, alphaWW, betaWW), color = "green",
+                size = 1) +
+  stat_function(fun = function(x) dbeta(x, alphaLL, betaLL), color = "purple",
+                size = 1) +
+  xlab("Series win probability")
