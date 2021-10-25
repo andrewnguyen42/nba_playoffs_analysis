@@ -1,0 +1,406 @@
+---
+title: "Welcome to the Bayes Jam"
+subtitle: "QSC 2021"
+author: "Nick Klagge, Andrew Nguyen"
+institute: "FRB NY, Board of Governors"
+output:
+  xaringan::moon_reader:
+    lib_dir: libs
+    nature:
+      highlightStyle: github
+      highlightLines: true
+      countIncrementalSlides: false
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(stringr)
+library(MASS)
+library(gt)
+library(patchwork)
+library(broom)
+
+po_dat_long_high_seed_only <- readRDS('data/po_dat_long_high_seed_only.rds')
+po_dat_long <- readRDS('data/po_dat_long.rds')
+po_dat_wide <- readRDS('data/po_dat_wide.rds')
+
+# prior probability distribution of series_win computed from negative binomial and game 1 p_win
+# increase game win probability by 9% to align distribution mean with empirical series win freq
+po_dat_wide <- po_dat_wide %>%
+  mutate(prior_p_series_win = pnbinom(3,4,p_win_game_1*1.09))
+
+```
+
+# Intro
+
+* NBA playoffs are a 'best of seven' series
+   * Two conferences
+   * Teams with the eight best records make the conference playoffs
+   * Each series is best-of-seven. First team to win four games advances
+   
+* Some questions
+   * Is there any game that is particularly important for winning a series?
+   * How important is home-court advantage?
+
+.center[
+![playoffs_bracket](https://images.daznservices.com/di/library/sporting_news/e5/2f/nba-playoff-bracket-081720-ftr_m4cqpiv4n9fb1m1kkfqz411ok.jpg?t=27066196&w=500&quality=80)
+]
+---
+# Data
+
+* The outcome of every playoff game from 1998-2019 from [basketballreference.com](https://github.com/jaebradley/basketball_reference_web_scraper)
+* ELO rating data from [538](https://projects.fivethirtyeight.com/complete-history-of-the-nba/#bucks)
+   * A relative ranking system updated after every game. Can be used to infer the probability of winning a single game
+> " Two players with equal ratings who play against each other are expected to score an equal number of wins. A player whose rating is 100 points greater than their opponent's is expected to score 64%; if the difference is 200 points, then the expected score for the stronger player is 76%."
+
+---
+
+# Analysis framework
+
+* Analyze all playoff series from the perspective of the higher seeded team
+   * All analysis from this baseline. A higher seeded team has a better record
+* Examine ELO, home court advantage, individual game influence
+* Empirical Bayes
+   * A more simplistic Bayesian analysis framework where we allow the prior distribution to be estimated from data
+
+---
+
+# High Level facts
+
+* ELO implies that the higher seeded team should win 58% of the time
+* Higher seeded team wins 62% of the time
+* Win percent varies a lot by game
+```{r}
+po_dat_long_high_seed_only %>%
+  group_by(is_home_team, game_num) %>%
+  summarize(p_win = mean(win, na.rm=T)) %>%
+  pivot_wider(names_from = is_home_team, values_from = p_win) %>%
+  magrittr::set_colnames(c('game_number', 'away_win_pcnt', 'home_win_pcnt')) %>%
+  gt() %>%
+  fmt_missing(everything()) %>%
+   fmt_number(c('away_win_pcnt', 'home_win_pcnt'))
+```
+
+---
+
+# Winning game 2 is more highly correlated with winning the next game
+.center[
+```{r}
+prepender <- function(string, prefix = "Game ") paste0(prefix, string)
+
+#don't filter on series length but plot by number of games played
+#focus on first three games
+
+plot_series_correlation <- function(data, n_games_played){
+   data %>%
+    filter(game_num <= n_games_played) %>%
+    group_by(series, season, team) %>%
+    arrange(series, season, team) %>%
+    mutate(won_game_n = last(win)) %>%
+    filter(won_game_n) %>%
+    group_by(game_num) %>%
+    summarise(prop = sum(win)/n()) %>%
+   mutate(is_g2 = game_num == 2) %>%
+    ggplot(aes(x = game_num, y = prop, fill = is_g2)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    scale_x_continuous(breaks = 1:n_games_played) +
+    guides(fill = "none") +
+    ylab('Proportion of games won') +
+    xlab('Game') +
+    scale_fill_manual(values = c('TRUE' = 'blue', 'FALSE' = 'grey')) 
+
+}
+
+g2_plot <- po_dat_long_high_seed_only %>%
+  plot_series_correlation(2) 
+
+g3_plot <- po_dat_long_high_seed_only %>%
+  plot_series_correlation(3) 
+
+g4_plot <- po_dat_long_high_seed_only %>%
+  plot_series_correlation(4) 
+  
+g5_plot <- po_dat_long_high_seed_only %>%
+  plot_series_correlation(5)
+
+g6_plot <- po_dat_long_high_seed_only %>%
+  plot_series_correlation(6)
+
+g7_plot <- po_dat_long_high_seed_only %>%
+  plot_series_correlation(7)
+
+g2_plot + g3_plot + g4_plot + g5_plot + g6_plot + g7_plot + plot_layout(nrow = 2)
+
+```
+]
+
+---
+
+# Winning game 2 is more highly correlated with winning the whole series
+
+```{r}
+po_dat_wide %>%
+   glm(data= ., won_series ~ win_game_1 + win_game_2 + win_game_3, family = 'binomial') %>%
+   tidy() %>%
+   gt %>%
+   fmt_number(-term)
+
+po_dat_wide %>%
+   glm(data= ., won_series ~ win_game_1 + win_game_2 + win_game_3 + p_win_game_1, family = 'binomial') %>%
+   tidy() %>%
+   gt %>%
+   fmt_number(-term)
+```
+---
+# Home court advantage still matters if we account for Elo
+```{r}
+#  - about 238 Elo points
+glm(win ~ elo_diff + is_home_team, data = po_dat_long_high_seed_only, family="binomial") %>%
+   tidy() %>%
+   gt %>%
+   fmt_number(-term)
+
+```
+
+---
+# A simple Bayesian model
+
+The negative binomial distribution is based on an experiment satisfying the following conditions:
+
+1. The experiment consists of a sequence of independent trials.
+2. Each trial can result in either a success or a failure.
+3. The probability of success $p$ is constant from trial to trial
+4. The experiment continues until a total of $r$ successes have been observed
+
+$$nb(k; r, p) \equiv \Pr(X = k) = \binom{k+r-1}{r-1} (1-p)^kp^r$$
+
+---
+# A model for p
+
+* Let the prior distribution be estimated by the data
+* A 'fully Bayesian' fixes the distribution before any data is observed
+
+We let $p$ be described by a beta distribution. why?
+
+* Bounded between 0,1
+* Extremely flexible with only two parameters
+* Estimate $\alpha$ and $\beta$ (more on these in a second)
+.center[
+<img src="https://upload.wikimedia.org/wikipedia/commons/thumb/f/f3/Beta_distribution_pdf.svg/1920px-Beta_distribution_pdf.svg.png" width="400" height="300" />
+]
+
+---
+
+## Let the mean of the distribution be the game 1 ELO
+
+```{r, echo = TRUE, results = 'hide'}
+beta_fit <- MASS::fitdistr(po_dat_wide$prior_p_series_win, dbeta,
+                    start = list(shape1 = 1, shape2 = 1))
+# beta estimates: 3.86, 1.24
+alpha0 <- beta_fit$estimate[1]
+beta0 <- beta_fit$estimate[2]
+# mean p(series_win) is 76%
+alpha0/(alpha0+beta0)
+```
+
+.center[
+```{r, out.width="48%"}
+# plot
+ggplot(po_dat_wide) +
+  geom_histogram(aes(prior_p_series_win, y = ..density..), binwidth = .05) +
+  stat_function(fun = function(x) dbeta(x, alpha0, beta0), color = "red",
+                size = 1) +
+  xlab("Series win probability")
+```
+]
+
+---
+# Details on Bayesian Updating
+
+* $\alpha_0$ and $\beta_0$ represent the initial estimates of the beta distribution
+* Separately $\alpha_0$ and $\beta_0$ have no clean interpretation
+* Jointly, the expected value of a Beta distributed variable is $\alpha_0/(\alpha_0+\beta_0)$
+
+If we observe new successes and failures, the new Beta distribution becomes
+
+$$Beta(\alpha_0+successes,\beta_0+failures)$$
+
+In a basketball playoff context, say we observe $n$ series and in $m$ of those, the teams won game 1 and the series. We can update our prior accordingly 
+
+$$Beta(\alpha_0+m,\beta_0+(n-m))$$
+
+---
+
+## Update the prior after winning game 1
+
+.center[
+```{r}
+cond <- sum(po_dat_wide$win_game_1)
+ws_cond <- sum(po_dat_wide$win_game_1 & po_dat_wide$won_series)
+alpha1 <- alpha0 + ws_cond
+beta1 <- beta0 + (cond - ws_cond)
+
+ggplot() +
+  stat_function(fun = function(x) dbeta(x, alpha0, beta0), aes(color = "line1"),
+                size = 1) +
+  stat_function(fun = function(x) dbeta(x, alpha1, beta1), aes(colour = "line2"),
+                size = 1) +
+  xlab("Series win probability") +
+  scale_colour_manual(
+  values = c('black', 'blue'),
+  labels = c('Initial Estimate', 'Estimate after winning game 1')) + 
+   guides(color = guide_legend(title = "")) 
+```
+]
+
+---
+## Update the prior after winning game 2
+
+.center[
+```{r}
+# update: won game 2 (conditional series win prob: 84%)
+cond <- sum(po_dat_wide$win_game_2)
+ws_cond <- sum(po_dat_wide$win_game_2 & po_dat_wide$won_series)
+alpha2 <- alpha0 + ws_cond
+beta2 <- beta0 + (cond - ws_cond)
+
+ggplot() +
+  stat_function(fun = function(x) dbeta(x, alpha0, beta0), aes(color = "line1"),
+                size = 1) +
+  stat_function(fun = function(x) dbeta(x, alpha2, beta2), aes(colour = "line2"),
+                size = 1) +
+  xlab("Series win probability") +
+  scale_colour_manual(
+  values = c('black', 'red'),
+  labels = c('Initial Estimate', 'Estimate after winning game 2')) + 
+   guides(color = guide_legend(title = "")) 
+```
+]
+---
+
+.center[
+```{r}
+# update: won game 3 (conditional series win prob: 91%)
+cond <- sum(po_dat_wide$win_game_3)
+ws_cond <- sum(po_dat_wide$win_game_3 & po_dat_wide$won_series)
+alpha3 <- alpha0 + ws_cond
+beta3 <- beta0 + (cond - ws_cond)
+
+cond <- sum(po_dat_wide$win_game_4)
+ws_cond <- sum(po_dat_wide$win_game_4 & po_dat_wide$won_series)
+alpha4 <- alpha0 + ws_cond
+beta4 <- beta0 + (cond - ws_cond)
+
+ggplot() +
+  stat_function(fun = function(x) dbeta(x, alpha1, beta1), aes(color = "blue"),
+                size = 1) +
+  stat_function(fun = function(x) dbeta(x, alpha2, beta2), aes(color = "red"),
+                size = 1) +
+  stat_function(fun = function(x) dbeta(x, alpha3, beta3), aes(color = "green"),
+                size = 1) +
+  stat_function(fun = function(x) dbeta(x, alpha4, beta4), aes(color = "purple"),
+                size = 1) +
+  xlab("Series win probability") +
+  scale_colour_manual(
+  values = c('blue', 'red', 'green', 'purple'),
+  labels = c('Estimate after winning game 1', 'Estimate after winning game 2', 'Estimate after winning game 3', 'Estimate after winning game 4')) + 
+   guides(color = guide_legend(title = ""))
+```
+]
+
+---
+
+## Update after losing game 1
+
+.center[
+```{r}
+# update: lost game 1 (conditional series win prob: 54%)
+cond <- sum(!po_dat_wide$win_game_1)
+ws_cond <- sum(!po_dat_wide$win_game_1 & po_dat_wide$won_series)
+alpha1l <- alpha0 + ws_cond
+beta1l <- beta0 + (cond - ws_cond)
+
+ggplot() +
+  stat_function(fun = function(x) dbeta(x, alpha0, beta0), aes(color = "black"),
+                size = 1) +
+  stat_function(fun = function(x) dbeta(x, alpha1, beta1), aes(color = "blue"),
+                size = 1) +
+  stat_function(fun = function(x) dbeta(x, alpha1l, beta1l), aes(color = "green"),
+                size = 1) +
+  xlab("Series win probability") +
+  scale_colour_manual(
+  values = c('black', 'blue', 'green'),
+  labels = c('Initial Estimate', 'Estimate after winning game 1', 'Estimate after losing game 1')) + 
+   guides(color = guide_legend(title = "")) 
+
+```
+]
+
+---
+
+# Condition on a winning path
+
+.center[
+```{r}
+# update: WL (conditional series win prob: 60%)
+cond <- sum(po_dat_wide$win_game_1 & !po_dat_wide$win_game_2)
+ws_cond <- sum(po_dat_wide$win_game_1 & !po_dat_wide$win_game_2 & po_dat_wide$won_series)
+alphaWL <- alpha0 + ws_cond
+betaWL <- beta0 + (cond - ws_cond)
+
+# update: LW (conditional series win prob: 65%)
+cond <- sum(!po_dat_wide$win_game_1 & po_dat_wide$win_game_2)
+ws_cond <- sum(!po_dat_wide$win_game_1 & po_dat_wide$win_game_2 & po_dat_wide$won_series)
+alphaLW <- alpha0 + ws_cond
+betaLW <- beta0 + (cond - ws_cond)
+
+# update: WW (conditional series win prob: 92%)
+cond <- sum(po_dat_wide$win_game_1 & po_dat_wide$win_game_2)
+ws_cond <- sum(po_dat_wide$win_game_1 & po_dat_wide$win_game_2 & po_dat_wide$won_series)
+alphaWW <- alpha0 + ws_cond
+betaWW <- beta0 + (cond - ws_cond)
+
+
+# update: LL (conditional series win prob: 13%)
+cond <- sum(!po_dat_wide$win_game_1 & !po_dat_wide$win_game_2)
+ws_cond <- sum(!po_dat_wide$win_game_1 & !po_dat_wide$win_game_2 & po_dat_wide$won_series)
+alphaLL <- alpha0 + ws_cond
+betaLL <- beta0 + (cond - ws_cond)
+
+ggplot() +
+  stat_function(fun = function(x) dbeta(x, alpha0, beta0), aes(color = "base"),
+                size = 1) +
+  stat_function(fun = function(x) dbeta(x, alphaWL, betaWL), aes(color = "wl"),
+                size = 1) +
+  stat_function(fun = function(x) dbeta(x, alphaLW, betaLW), aes(color = "lw"),
+                size = 1) +
+  stat_function(fun = function(x) dbeta(x, alphaWW, betaWW), aes(color = "ww"),
+                size = 1) +
+  stat_function(fun = function(x) dbeta(x, alphaLL, betaLL), aes(color = "ll"),
+                size = 1) +
+  xlab("Series win probability")  +
+  scale_colour_manual(
+  values = c('base' = 'black', 'wl' = 'red', 'lw' = 'blue', 'ww' = 'green', 'll' = 'purple'),
+  labels = c('Initial Estimate', 'WL', 'LW', 'WW', 'LL')) + 
+   guides(color = guide_legend(title = "Win Path")) 
+
+```
+
+]
+
+---
+
+# Takeaways
+
+* Winning game 2 is more important than game 1
+* Something about Bayes
+
+---
+
+# References
+
+* [Understanding empirical Bayes estimation (using baseball statistics) by David Robinson](http://varianceexplained.org/r/empirical_bayes_baseball/)
+* [ELO Rating System](https://en.wikipedia.org/wiki/Elo_rating_system)

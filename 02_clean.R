@@ -127,6 +127,11 @@ po_dat_long <- dat %>%
   mutate(p_win = 1/(10^(-(team_elo-opponent_elo)/400) + 1),
          elo_diff = team_elo - opponent_elo) 
 
+po_dat_long_high_seed_only <- po_dat_long %>%
+  group_by(series, season) %>% arrange(series, season, game_num, rev(name)) %>% 
+  filter(team == first(team)) %>%
+  mutate(is_home_team = name=="home_team")
+
 po_dat_wide <- po_dat_long %>%
   select(season, name, series, team, game_num, win, series_length, won_series, p_win, elo_diff) %>%
   pivot_wider(names_from = game_num, values_from = c(name, win, p_win, elo_diff), names_prefix = "game_") %>%
@@ -134,10 +139,9 @@ po_dat_wide <- po_dat_long %>%
   filter(name_game_1 == "home_team") %>%
   select(-starts_with("name_"))
 
-po_dat_long <- po_dat_long %>%
-  filter((name == "home_team" & game_num %in% c(1, 2, 5, 7)) | 
-           (name == "away_team" & game_num %in% c(3, 4, 6))) %>%
-  mutate(is_home_team = name=="home_team")
+
 
 saveRDS(po_dat_long, "data/po_dat_long.rds")
+saveRDS(po_dat_long_high_seed_only, "data/po_dat_long_high_seed_only.rds")
 saveRDS(po_dat_wide, "data/po_dat_wide.rds")
+
