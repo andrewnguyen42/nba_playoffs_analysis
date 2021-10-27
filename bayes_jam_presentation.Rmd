@@ -5,6 +5,7 @@ author: "Nick Klagge, Andrew Nguyen"
 institute: "FRB NY, Board of Governors"
 output:
   xaringan::moon_reader:
+    css: ["default", "custom.css"]
     lib_dir: libs
     nature:
       highlightStyle: github
@@ -33,7 +34,6 @@ po_dat_wide <- po_dat_wide %>%
   mutate(prior_p_series_win = pnbinom(3,4,p_win_game_1*1.09))
 
 ```
-
 # Intro
 
 * NBA playoffs are a 'best of seven' series
@@ -86,7 +86,7 @@ po_dat_long_high_seed_only %>%
 
 ---
 
-# Winning game 2 is more highly correlated with winning the next game
+### Winning game 2 is more highly correlated with winning the next game
 .center[
 ```{r}
 prepender <- function(string, prefix = "Game ") paste0(prefix, string)
@@ -139,7 +139,7 @@ g2_plot + g3_plot + g4_plot + g5_plot + g6_plot + g7_plot + plot_layout(nrow = 2
 
 ---
 
-# Winning game 2 is more highly correlated with winning the whole series
+### Winning game 2 is more highly correlated with winning the whole series
 
 ```{r}
 po_dat_wide %>%
@@ -155,7 +155,7 @@ po_dat_wide %>%
    fmt_number(-term)
 ```
 ---
-# Home court advantage still matters if we account for Elo
+## Home court advantage still matters if we account for Elo
 ```{r}
 #  - about 238 Elo points
 glm(win ~ elo_diff + is_home_team, data = po_dat_long_high_seed_only, family="binomial") %>%
@@ -165,6 +165,11 @@ glm(win ~ elo_diff + is_home_team, data = po_dat_long_high_seed_only, family="bi
 
 ```
 
+---
+### "I know I am just an algorithm... No one knows who I am, or what I do. But that all changes today." 
+Al G Rhythm on Bayesian updating
+.center[
+![](https://c.tenor.com/36LrUnJooEMAAAAC/hmm-alg-rhythm.gif)]
 ---
 # A simple Bayesian model
 
@@ -234,7 +239,7 @@ $$Beta(\alpha_0+m,\beta_0+(n-m))$$
 
 ---
 
-## Update the prior after winning game 1
+### Update the prior after winning game 1
 
 .center[
 ```{r}
@@ -257,7 +262,7 @@ ggplot() +
 ]
 
 ---
-## Update the prior after winning game 2
+### Update the prior after winning game 2
 
 .center[
 ```{r}
@@ -313,7 +318,7 @@ ggplot() +
 
 ---
 
-## Update after losing game 1
+### Update after losing game 1
 
 .center[
 ```{r}
@@ -341,7 +346,7 @@ ggplot() +
 
 ---
 
-# Condition on a winning path
+### Condition on a winning path
 
 .center[
 ```{r}
