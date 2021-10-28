@@ -10,7 +10,7 @@ output:
     nature:
       highlightStyle: github
       highlightLines: true
-      countIncrementalSlides: false
+      beforeInit: "macros.js"
 ---
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
@@ -34,7 +34,7 @@ po_dat_wide <- po_dat_wide %>%
   mutate(prior_p_series_win = pnbinom(3,4,p_win_game_1*1.09))
 
 ```
-# Intro
+## Intro
 
 * NBA playoffs are a 'best of seven' series
    * Two conferences
@@ -46,10 +46,10 @@ po_dat_wide <- po_dat_wide %>%
    * How important is home-court advantage?
 
 .center[
-![playoffs_bracket](https://images.daznservices.com/di/library/sporting_news/e5/2f/nba-playoff-bracket-081720-ftr_m4cqpiv4n9fb1m1kkfqz411ok.jpg?t=27066196&w=500&quality=80)
+![:scale 50%](https://images.daznservices.com/di/library/sporting_news/e5/2f/nba-playoff-bracket-081720-ftr_m4cqpiv4n9fb1m1kkfqz411ok.jpg?t=27066196&w=500&quality=80)
 ]
 ---
-# Data
+## Data
 
 * The outcome of every playoff game from 1998-2019 from [basketballreference.com](https://github.com/jaebradley/basketball_reference_web_scraper)
 * ELO rating data from [538](https://projects.fivethirtyeight.com/complete-history-of-the-nba/#bucks)
@@ -58,7 +58,7 @@ po_dat_wide <- po_dat_wide %>%
 
 ---
 
-# Analysis framework
+## Analysis framework
 
 * Analyze all playoff series from the perspective of the higher seeded team
    * All analysis from this baseline. A higher seeded team has a better record
@@ -68,7 +68,7 @@ po_dat_wide <- po_dat_wide %>%
 
 ---
 
-# High Level facts
+## High Level facts
 
 * ELO implies that the higher seeded team should win 58% of the time
 * Higher seeded team wins 62% of the time
@@ -140,22 +140,29 @@ g2_plot + g3_plot + g4_plot + g5_plot + g6_plot + g7_plot + plot_layout(nrow = 2
 ---
 
 ### Winning game 2 is more highly correlated with winning the whole series
-
+.pull-left[
 ```{r}
 po_dat_wide %>%
    glm(data= ., won_series ~ win_game_1 + win_game_2 + win_game_3, family = 'binomial') %>%
    tidy() %>%
+  dplyr::select(-statistic) %>%
    gt %>%
-   fmt_number(-term)
+   fmt_number(-term) 
+```
+]
 
+.pull-right[
+```{r}
 po_dat_wide %>%
    glm(data= ., won_series ~ win_game_1 + win_game_2 + win_game_3 + p_win_game_1, family = 'binomial') %>%
    tidy() %>%
+  dplyr::select(-statistic) %>%
    gt %>%
    fmt_number(-term)
 ```
+]
 ---
-## Home court advantage still matters if we account for Elo
+### Home court advantage still matters if we account for Elo
 ```{r}
 #  - about 238 Elo points
 glm(win ~ elo_diff + is_home_team, data = po_dat_long_high_seed_only, family="binomial") %>%
@@ -171,7 +178,7 @@ Al G Rhythm on Bayesian updating
 .center[
 ![](https://c.tenor.com/36LrUnJooEMAAAAC/hmm-alg-rhythm.gif)]
 ---
-# A simple Bayesian model
+## A simple Bayesian model
 
 The negative binomial distribution is based on an experiment satisfying the following conditions:
 
@@ -183,7 +190,7 @@ The negative binomial distribution is based on an experiment satisfying the foll
 $$nb(k; r, p) \equiv \Pr(X = k) = \binom{k+r-1}{r-1} (1-p)^kp^r$$
 
 ---
-# A model for p
+## A model for p
 
 * Let the prior distribution be estimated by the data
 * A 'fully Bayesian' fixes the distribution before any data is observed
@@ -199,7 +206,7 @@ We let $p$ be described by a beta distribution. why?
 
 ---
 
-## Let the mean of the distribution be the game 1 ELO
+### Let the mean of the distribution be the game 1 ELO
 
 ```{r, echo = TRUE, results = 'hide'}
 beta_fit <- MASS::fitdistr(po_dat_wide$prior_p_series_win, dbeta,
@@ -212,7 +219,7 @@ alpha0/(alpha0+beta0)
 ```
 
 .center[
-```{r, out.width="48%"}
+```{r, out.width="40%", out.height='40%'}
 # plot
 ggplot(po_dat_wide) +
   geom_histogram(aes(prior_p_series_win, y = ..density..), binwidth = .05) +
@@ -223,7 +230,7 @@ ggplot(po_dat_wide) +
 ]
 
 ---
-# Details on Bayesian Updating
+## Details on Bayesian Updating
 
 * $\alpha_0$ and $\beta_0$ represent the initial estimates of the beta distribution
 * Separately $\alpha_0$ and $\beta_0$ have no clean interpretation
