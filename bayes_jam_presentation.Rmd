@@ -34,12 +34,21 @@ po_dat_wide <- po_dat_wide %>%
   mutate(prior_p_series_win = pnbinom(3,4,p_win_game_1*1.09))
 
 ```
+## Disclaimer
+
+* We started this project to learn something about Bayesian analysis with a fun topic
+* We are by no means experts!
+* If the Federal Reserve System has views on the NBA, this does not represent them
+
+---
+
 ## Intro
 
-* NBA playoffs are a 'best of seven' series
-   * Two conferences
-   * Teams with the eight best records make the conference playoffs
+* NBA playoffs are played in 'best of seven' series
+   * Teams are matched up by "seed" or rank - 1 plays 8, 2 plays 7, and so on
    * Each series is best-of-seven. First team to win four games advances
+   * Higher seeded team gets "home-court advantage"
+   * Standard (mostly) pattern of H-H-A-A-H-A-H
    
 * Some questions
    * Is there any game that is particularly important for winning a series?
@@ -51,9 +60,9 @@ po_dat_wide <- po_dat_wide %>%
 ---
 ## Data
 
-* The outcome of every playoff game from 1998-2019 from [basketballreference.com](https://github.com/jaebradley/basketball_reference_web_scraper)
-* ELO rating data from [538](https://projects.fivethirtyeight.com/complete-history-of-the-nba/#bucks)
-   * A relative ranking system updated after every game. Can be used to infer the probability of winning a single game
+* The outcome of every playoff game from 1998-2019 from [basketballreference.com](https://github.com/jaebradley/basketball_reference_web_scraper), scraped with Python
+* ELO rating data from [538](https://projects.fivethirtyeight.com/complete-history-of-the-nba/#bucks), from R *fivethirtyeightdata* package
+   * A relative ranking system updated after every game, originally developed for chess. Can be used to infer the probability of winning a single game
 > " Two players with equal ratings who play against each other are expected to score an equal number of wins. A player whose rating is 100 points greater than their opponent's is expected to score 64%; if the difference is 200 points, then the expected score for the stronger player is 76%."
 
 ---
@@ -61,32 +70,36 @@ po_dat_wide <- po_dat_wide %>%
 ## Analysis framework
 
 * Analyze all playoff series from the perspective of the higher seeded team
-   * All analysis from this baseline. A higher seeded team has a better record
+   * Want to be consistent when considering which games matter, given standardized home-away pattern
 * Examine ELO, home court advantage, individual game influence
-* Empirical Bayes
-   * A more simplistic Bayesian analysis framework where we allow the prior distribution to be estimated from data
+* We'll look at summary statistics, logit regression, and Bayesian estimation
+* We focus most on games 1-4, as these are played in every series
+  * Analyzing games 5-7 is tricky because their existence is conditional on earlier game outcomes
+  * Games 1-4 have a fully consistent home/away pattern, while games 5 and 6 have differed at times
 
 ---
 
 ## High Level facts
 
-* ELO implies that the higher seeded team should win 58% of the time
-* Higher seeded team wins 62% of the time
-* Win percent varies a lot by game
+* Elo implies that the higher seeded team should win individual games 58% of the time on average
+* In fact, they win about 62% of games 
+* This is largely explained by home court advantage: win frequency varies a lot by game number
+* Higher seeded teams win about 75% of series ("best-of" favors the better team)
 ```{r}
 po_dat_long_high_seed_only %>%
   group_by(is_home_team, game_num) %>%
   summarize(p_win = mean(win, na.rm=T)) %>%
   pivot_wider(names_from = is_home_team, values_from = p_win) %>%
+  arrange(game_num) %>%
   magrittr::set_colnames(c('game_number', 'away_win_pcnt', 'home_win_pcnt')) %>%
   gt() %>%
   fmt_missing(everything()) %>%
-   fmt_number(c('away_win_pcnt', 'home_win_pcnt'))
+  fmt_number(c('away_win_pcnt', 'home_win_pcnt'))
 ```
 
 ---
 
-### Winning game 2 is more highly correlated with winning the next game
+### Game 2 outcome most highly correlated with subsequent game outcomes
 .center[
 ```{r}
 prepender <- function(string, prefix = "Game ") paste0(prefix, string)
@@ -139,7 +152,7 @@ g2_plot + g3_plot + g4_plot + g5_plot + g6_plot + g7_plot + plot_layout(nrow = 2
 
 ---
 
-### Winning game 2 is more highly correlated with winning the whole series
+### Game 2 outcome most highly correlated with winning the whole series
 .pull-left[
 ```{r}
 po_dat_wide %>%
@@ -178,24 +191,21 @@ Al G Rhythm on Bayesian updating
 .center[
 ![](https://c.tenor.com/36LrUnJooEMAAAAC/hmm-alg-rhythm.gif)]
 ---
-## A simple Bayesian model
+## A Bayesian perspective
 
-The negative binomial distribution is based on an experiment satisfying the following conditions:
-
-1. The experiment consists of a sequence of independent trials.
-2. Each trial can result in either a success or a failure.
-3. The probability of success $p$ is constant from trial to trial
-4. The experiment continues until a total of $r$ successes have been observed
-
-$$nb(k; r, p) \equiv \Pr(X = k) = \binom{k+r-1}{r-1} (1-p)^kp^r$$
+* Bayesian reasoning focuses on taking existing probability estimates and updating them based on new information
+* This seems like a natural framework for our questions: we're interested in how the serial outcomes of individual games influence the probability of an overall series win
+* Let's start by assuming we don't know anything about the two teams playing in a given series besides which one is higher-seeded. How estimate of their series win probability?
+  * In a "frequentist" perspective, we could estimate their win probability by the sample average series win frequency for higher-seeded teams: 75%
+  * In reality, we know that there's not just a single answer to this question: some series are very closely matched and others are not
+  * That 75% sample average is made up of a range of higher and lower individual win probabilities
+  * Bayesian reasoning lets us represent our estimate of the win probability with a probability distribution
 
 ---
-## A model for p
 
-* Let the prior distribution be estimated by the data
-* A 'fully Bayesian' fixes the distribution before any data is observed
+## The beta distribution
 
-We let $p$ be described by a beta distribution. why?
+We let the higher-seeded team's series win probability $p$ be described by a beta distribution. why?
 
 * Bounded between 0,1
 * Extremely flexible with only two parameters
@@ -206,7 +216,42 @@ We let $p$ be described by a beta distribution. why?
 
 ---
 
-### Let the mean of the distribution be the game 1 ELO
+## Developing a prior
+
+* What is our "prior" estimate of the distribution of win probability, before observing any game outcomes?
+* The most "uninformed" prior would be a beta(1,1), which is equivalent to the uniform distribution
+* But we definitely know at least a little more than that: at minimum, we know the home team is more likely to win (both because they are higher ranked and because of home court advantage)
+* We can use the pre-series Elo ratings and the negative binomial distribution to develop our prior
+
+---
+
+## The negative binomial distribution
+
+The negative binomial distribution is based on an experiment satisfying the following conditions:
+
+1. The experiment consists of a sequence of independent trials.
+2. Each trial can result in either a success or a failure.
+3. The probability of success $p$ is constant from trial to trial
+4. The experiment continues until a total of $r$ successes have been observed
+
+$$nb(k; r, p) \equiv \Pr(X = k) = \binom{k+r-1}{r-1} (1-p)^kp^r$$
+
+This sounds a lot like the conditions of a best-of-seven series! 
+
+---
+
+## Negative binomial series win probabilities
+
+* Given any two teams' pre-series Elo ratings, we can calculate the game-wise win probability, and feed this to the negative binomial distribution to estimate the series-wise win probability.
+* We know that the assumptions of the negative binomial don't fully hold in the NBA playoffs: home-court advantage means that the win probability varies in different game numbers. But maybe it's close enough to develop a reasonable prior
+* We estimated the win probabilities for each series in the dataset using Elo and the negative binomial, then fit a beta distribution to that sample
+* We found that the mean of this distribution was slightly lower than the empirical win frequency for the higher seeded team
+  * This makes sense because the negative binomial does not account for home court advantage
+  * We adjust the game-level win probability upward to approximate this. We find that a 9% increase in the higher-seeded team's game-level win probability results in a distribution with a mean that matches the empirical frequency.
+
+---
+
+### Our prior on series win probability
 
 ```{r, echo = TRUE, results = 'hide'}
 beta_fit <- MASS::fitdistr(po_dat_wide$prior_p_series_win, dbeta,
@@ -230,13 +275,12 @@ ggplot(po_dat_wide) +
 ]
 
 ---
-## Details on Bayesian Updating
+## Updating the prior
 
-* $\alpha_0$ and $\beta_0$ represent the initial estimates of the beta distribution
-* Separately $\alpha_0$ and $\beta_0$ have no clean interpretation
-* Jointly, the expected value of a Beta distributed variable is $\alpha_0/(\alpha_0+\beta_0)$
+* The beta distribution has the special property of being a *conjugate prior* for Bernoulli trials
+* This means that, when we have a beta-distributed prior on a binomial probability, then observe a sample of Bernoulli trials, the posterior distribution after we update on the outcomes is also a beta distribution
 
-If we observe new successes and failures, the new Beta distribution becomes
+In particular, when we observe new successes and failures, the new Beta distribution becomes
 
 $$Beta(\alpha_0+successes,\beta_0+failures)$$
 
@@ -246,7 +290,7 @@ $$Beta(\alpha_0+m,\beta_0+(n-m))$$
 
 ---
 
-### Update the prior after winning game 1
+### Update conditional on game 1 win
 
 .center[
 ```{r}
@@ -269,7 +313,7 @@ ggplot() +
 ]
 
 ---
-### Update the prior after winning game 2
+### Update conditional on game 2 win
 
 .center[
 ```{r}
@@ -292,6 +336,8 @@ ggplot() +
 ```
 ]
 ---
+
+## Update conditional on winning each of first four games
 
 .center[
 ```{r}
@@ -405,10 +451,34 @@ ggplot() +
 
 ---
 
+## Estimate differences in means
+
+
+
+```{r}
+
+sim_LW <- rbeta(10000, alphaLW, betaLW)
+sim_WL <- rbeta(10000, alphaWL, betaWL)
+sim_diff <- sim_LW - sim_WL
+df_sd <- tibble(sim_diff)
+
+norm_fit <- MASS::fitdistr(df_sd$sim_diff, "normal")
+ggplot(df_sd) +
+  geom_histogram(aes(sim_diff, y = ..density..), binwidth = .01) +
+  stat_function(fun = function(x) dnorm(x, norm_fit$estimate[1], norm_fit$estimate[2]), color = "red",
+                size = 1) +
+  xlab("Simulated prob difference: LW minus WL")
+```
+
+
+---
+
 # Takeaways
 
-* Winning game 2 is more important than game 1
-* Something about Bayes
+* Game 2 looks like the most influential game, but we need more playoff data to say this with  confidence!
+* Bayesian thinking lends itself well to cases like playoffs where an uncertain outcome is determined by a series of events that happen over time
+* It's very easy to update beta priors with Bernoulli trial outcomes
+* Posteriors help visualize how uncertainty decreases as well as how mean estimate changes
 
 ---
 

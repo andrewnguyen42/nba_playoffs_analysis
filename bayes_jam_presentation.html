@@ -1,0 +1,1863 @@
+<!DOCTYPE html>
+<html lang="" xml:lang="">
+  <head>
+    <title>Welcome to the Bayes Jam</title>
+    <meta charset="utf-8" />
+    <meta name="author" content="Nick Klagge, Andrew Nguyen" />
+    <script src="libs/header-attrs-2.11/header-attrs.js"></script>
+    <link href="libs/remark-css-0.0.1/default.css" rel="stylesheet" />
+    <link rel="stylesheet" href="custom.css" type="text/css" />
+  </head>
+  <body>
+    <textarea id="source">
+class: center, middle, inverse, title-slide
+
+# Welcome to the Bayes Jam
+## QSC 2021
+### Nick Klagge, Andrew Nguyen
+### FRB NY, Board of Governors
+
+---
+
+
+## Disclaimer
+
+* We started this project to learn something about Bayesian analysis with a fun topic
+* We are by no means experts!
+* If the Federal Reserve System has views on the NBA, this does not represent them
+
+---
+
+## Intro
+
+* NBA playoffs are played in 'best of seven' series
+   * Teams are matched up by "seed" or rank - 1 plays 8, 2 plays 7, and so on
+   * Each series is best-of-seven. First team to win four games advances
+   * Higher seeded team gets "home-court advantage"
+   * Standard (mostly) pattern of H-H-A-A-H-A-H
+   
+* Some questions
+   * Is there any game that is particularly important for winning a series?
+   * How important is home-court advantage?
+
+.center[
+![:scale 50%](https://images.daznservices.com/di/library/sporting_news/e5/2f/nba-playoff-bracket-081720-ftr_m4cqpiv4n9fb1m1kkfqz411ok.jpg?t=27066196&amp;w=500&amp;quality=80)
+]
+---
+## Data
+
+* The outcome of every playoff game from 1998-2019 from [basketballreference.com](https://github.com/jaebradley/basketball_reference_web_scraper), scraped with Python
+* ELO rating data from [538](https://projects.fivethirtyeight.com/complete-history-of-the-nba/#bucks), from R *fivethirtyeightdata* package
+   * A relative ranking system updated after every game, originally developed for chess. Can be used to infer the probability of winning a single game
+&gt; " Two players with equal ratings who play against each other are expected to score an equal number of wins. A player whose rating is 100 points greater than their opponent's is expected to score 64%; if the difference is 200 points, then the expected score for the stronger player is 76%."
+
+---
+
+## Analysis framework
+
+* Analyze all playoff series from the perspective of the higher seeded team
+   * Want to be consistent when considering which games matter, given standardized home-away pattern
+* Examine ELO, home court advantage, individual game influence
+* We'll look at summary statistics, logit regression, and Bayesian estimation
+* We focus most on games 1-4, as these are played in every series
+  * Analyzing games 5-7 is tricky because their existence is conditional on earlier game outcomes
+  * Games 1-4 have a fully consistent home/away pattern, while games 5 and 6 have differed at times
+
+---
+
+## High Level facts
+
+* Elo implies that the higher seeded team should win individual games 58% of the time on average
+* In fact, they win about 62% of games 
+* This is largely explained by home court advantage: win frequency varies a lot by game number
+* Higher seeded teams win about 75% of series ("best-of" favors the better team)
+<div id="hwmnswcqvn" style="overflow-x:auto;overflow-y:auto;width:auto;height:auto;">
+<style>html {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', 'Fira Sans', 'Droid Sans', Arial, sans-serif;
+}
+
+#hwmnswcqvn .gt_table {
+  display: table;
+  border-collapse: collapse;
+  margin-left: auto;
+  margin-right: auto;
+  color: #333333;
+  font-size: 16px;
+  font-weight: normal;
+  font-style: normal;
+  background-color: #FFFFFF;
+  width: auto;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #A8A8A8;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #A8A8A8;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+}
+
+#hwmnswcqvn .gt_heading {
+  background-color: #FFFFFF;
+  text-align: center;
+  border-bottom-color: #FFFFFF;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#hwmnswcqvn .gt_title {
+  color: #333333;
+  font-size: 125%;
+  font-weight: initial;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  border-bottom-color: #FFFFFF;
+  border-bottom-width: 0;
+}
+
+#hwmnswcqvn .gt_subtitle {
+  color: #333333;
+  font-size: 85%;
+  font-weight: initial;
+  padding-top: 0;
+  padding-bottom: 6px;
+  border-top-color: #FFFFFF;
+  border-top-width: 0;
+}
+
+#hwmnswcqvn .gt_bottom_border {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#hwmnswcqvn .gt_col_headings {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#hwmnswcqvn .gt_col_heading {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 6px;
+  padding-left: 5px;
+  padding-right: 5px;
+  overflow-x: hidden;
+}
+
+#hwmnswcqvn .gt_column_spanner_outer {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+#hwmnswcqvn .gt_column_spanner_outer:first-child {
+  padding-left: 0;
+}
+
+#hwmnswcqvn .gt_column_spanner_outer:last-child {
+  padding-right: 0;
+}
+
+#hwmnswcqvn .gt_column_spanner {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  overflow-x: hidden;
+  display: inline-block;
+  width: 100%;
+}
+
+#hwmnswcqvn .gt_group_heading {
+  padding: 8px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+}
+
+#hwmnswcqvn .gt_empty_group_heading {
+  padding: 0.5px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: middle;
+}
+
+#hwmnswcqvn .gt_from_md > :first-child {
+  margin-top: 0;
+}
+
+#hwmnswcqvn .gt_from_md > :last-child {
+  margin-bottom: 0;
+}
+
+#hwmnswcqvn .gt_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  margin: 10px;
+  border-top-style: solid;
+  border-top-width: 1px;
+  border-top-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+  overflow-x: hidden;
+}
+
+#hwmnswcqvn .gt_stub {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-right-style: solid;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  padding-left: 12px;
+}
+
+#hwmnswcqvn .gt_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#hwmnswcqvn .gt_first_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+}
+
+#hwmnswcqvn .gt_grand_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#hwmnswcqvn .gt_first_grand_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-style: double;
+  border-top-width: 6px;
+  border-top-color: #D3D3D3;
+}
+
+#hwmnswcqvn .gt_striped {
+  background-color: rgba(128, 128, 128, 0.05);
+}
+
+#hwmnswcqvn .gt_table_body {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#hwmnswcqvn .gt_footnotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#hwmnswcqvn .gt_footnote {
+  margin: 0px;
+  font-size: 90%;
+  padding: 4px;
+}
+
+#hwmnswcqvn .gt_sourcenotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#hwmnswcqvn .gt_sourcenote {
+  font-size: 90%;
+  padding: 4px;
+}
+
+#hwmnswcqvn .gt_left {
+  text-align: left;
+}
+
+#hwmnswcqvn .gt_center {
+  text-align: center;
+}
+
+#hwmnswcqvn .gt_right {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+#hwmnswcqvn .gt_font_normal {
+  font-weight: normal;
+}
+
+#hwmnswcqvn .gt_font_bold {
+  font-weight: bold;
+}
+
+#hwmnswcqvn .gt_font_italic {
+  font-style: italic;
+}
+
+#hwmnswcqvn .gt_super {
+  font-size: 65%;
+}
+
+#hwmnswcqvn .gt_footnote_marks {
+  font-style: italic;
+  font-weight: normal;
+  font-size: 65%;
+}
+</style>
+<table class="gt_table">
+  
+  <thead class="gt_col_headings">
+    <tr>
+      <th class="gt_col_heading gt_columns_bottom_border gt_right" rowspan="1" colspan="1">game_number</th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_right" rowspan="1" colspan="1">away_win_pcnt</th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_right" rowspan="1" colspan="1">home_win_pcnt</th>
+    </tr>
+  </thead>
+  <tbody class="gt_table_body">
+    <tr><td class="gt_row gt_right">1</td>
+<td class="gt_row gt_right">&mdash;</td>
+<td class="gt_row gt_right">0.73</td></tr>
+    <tr><td class="gt_row gt_right">2</td>
+<td class="gt_row gt_right">&mdash;</td>
+<td class="gt_row gt_right">0.75</td></tr>
+    <tr><td class="gt_row gt_right">3</td>
+<td class="gt_row gt_right">0.46</td>
+<td class="gt_row gt_right">&mdash;</td></tr>
+    <tr><td class="gt_row gt_right">4</td>
+<td class="gt_row gt_right">0.49</td>
+<td class="gt_row gt_right">&mdash;</td></tr>
+    <tr><td class="gt_row gt_right">5</td>
+<td class="gt_row gt_right">0.43</td>
+<td class="gt_row gt_right">0.78</td></tr>
+    <tr><td class="gt_row gt_right">6</td>
+<td class="gt_row gt_right">0.50</td>
+<td class="gt_row gt_right">0.56</td></tr>
+    <tr><td class="gt_row gt_right">7</td>
+<td class="gt_row gt_right">&mdash;</td>
+<td class="gt_row gt_right">0.73</td></tr>
+  </tbody>
+  
+  
+</table>
+</div>
+
+---
+
+### Game 2 outcome most highly correlated with subsequent game outcomes
+.center[
+![](bayes_jam_presentation_files/figure-html/unnamed-chunk-2-1.png)&lt;!-- --&gt;
+]
+
+---
+
+### Game 2 outcome most highly correlated with winning the whole series
+.pull-left[
+<div id="cjxnnmbrfb" style="overflow-x:auto;overflow-y:auto;width:auto;height:auto;">
+<style>html {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', 'Fira Sans', 'Droid Sans', Arial, sans-serif;
+}
+
+#cjxnnmbrfb .gt_table {
+  display: table;
+  border-collapse: collapse;
+  margin-left: auto;
+  margin-right: auto;
+  color: #333333;
+  font-size: 16px;
+  font-weight: normal;
+  font-style: normal;
+  background-color: #FFFFFF;
+  width: auto;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #A8A8A8;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #A8A8A8;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+}
+
+#cjxnnmbrfb .gt_heading {
+  background-color: #FFFFFF;
+  text-align: center;
+  border-bottom-color: #FFFFFF;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#cjxnnmbrfb .gt_title {
+  color: #333333;
+  font-size: 125%;
+  font-weight: initial;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  border-bottom-color: #FFFFFF;
+  border-bottom-width: 0;
+}
+
+#cjxnnmbrfb .gt_subtitle {
+  color: #333333;
+  font-size: 85%;
+  font-weight: initial;
+  padding-top: 0;
+  padding-bottom: 6px;
+  border-top-color: #FFFFFF;
+  border-top-width: 0;
+}
+
+#cjxnnmbrfb .gt_bottom_border {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#cjxnnmbrfb .gt_col_headings {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#cjxnnmbrfb .gt_col_heading {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 6px;
+  padding-left: 5px;
+  padding-right: 5px;
+  overflow-x: hidden;
+}
+
+#cjxnnmbrfb .gt_column_spanner_outer {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+#cjxnnmbrfb .gt_column_spanner_outer:first-child {
+  padding-left: 0;
+}
+
+#cjxnnmbrfb .gt_column_spanner_outer:last-child {
+  padding-right: 0;
+}
+
+#cjxnnmbrfb .gt_column_spanner {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  overflow-x: hidden;
+  display: inline-block;
+  width: 100%;
+}
+
+#cjxnnmbrfb .gt_group_heading {
+  padding: 8px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+}
+
+#cjxnnmbrfb .gt_empty_group_heading {
+  padding: 0.5px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: middle;
+}
+
+#cjxnnmbrfb .gt_from_md > :first-child {
+  margin-top: 0;
+}
+
+#cjxnnmbrfb .gt_from_md > :last-child {
+  margin-bottom: 0;
+}
+
+#cjxnnmbrfb .gt_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  margin: 10px;
+  border-top-style: solid;
+  border-top-width: 1px;
+  border-top-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+  overflow-x: hidden;
+}
+
+#cjxnnmbrfb .gt_stub {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-right-style: solid;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  padding-left: 12px;
+}
+
+#cjxnnmbrfb .gt_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#cjxnnmbrfb .gt_first_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+}
+
+#cjxnnmbrfb .gt_grand_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#cjxnnmbrfb .gt_first_grand_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-style: double;
+  border-top-width: 6px;
+  border-top-color: #D3D3D3;
+}
+
+#cjxnnmbrfb .gt_striped {
+  background-color: rgba(128, 128, 128, 0.05);
+}
+
+#cjxnnmbrfb .gt_table_body {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#cjxnnmbrfb .gt_footnotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#cjxnnmbrfb .gt_footnote {
+  margin: 0px;
+  font-size: 90%;
+  padding: 4px;
+}
+
+#cjxnnmbrfb .gt_sourcenotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#cjxnnmbrfb .gt_sourcenote {
+  font-size: 90%;
+  padding: 4px;
+}
+
+#cjxnnmbrfb .gt_left {
+  text-align: left;
+}
+
+#cjxnnmbrfb .gt_center {
+  text-align: center;
+}
+
+#cjxnnmbrfb .gt_right {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+#cjxnnmbrfb .gt_font_normal {
+  font-weight: normal;
+}
+
+#cjxnnmbrfb .gt_font_bold {
+  font-weight: bold;
+}
+
+#cjxnnmbrfb .gt_font_italic {
+  font-style: italic;
+}
+
+#cjxnnmbrfb .gt_super {
+  font-size: 65%;
+}
+
+#cjxnnmbrfb .gt_footnote_marks {
+  font-style: italic;
+  font-weight: normal;
+  font-size: 65%;
+}
+</style>
+<table class="gt_table">
+  
+  <thead class="gt_col_headings">
+    <tr>
+      <th class="gt_col_heading gt_columns_bottom_border gt_left" rowspan="1" colspan="1">term</th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_right" rowspan="1" colspan="1">estimate</th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_right" rowspan="1" colspan="1">std.error</th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_right" rowspan="1" colspan="1">p.value</th>
+    </tr>
+  </thead>
+  <tbody class="gt_table_body">
+    <tr><td class="gt_row gt_left">(Intercept)</td>
+<td class="gt_row gt_right">&minus;2.87</td>
+<td class="gt_row gt_right">0.49</td>
+<td class="gt_row gt_right">0.00</td></tr>
+    <tr><td class="gt_row gt_left">win_game_1TRUE</td>
+<td class="gt_row gt_right">2.28</td>
+<td class="gt_row gt_right">0.39</td>
+<td class="gt_row gt_right">0.00</td></tr>
+    <tr><td class="gt_row gt_left">win_game_2TRUE</td>
+<td class="gt_row gt_right">2.52</td>
+<td class="gt_row gt_right">0.40</td>
+<td class="gt_row gt_right">0.00</td></tr>
+    <tr><td class="gt_row gt_left">win_game_3TRUE</td>
+<td class="gt_row gt_right">2.35</td>
+<td class="gt_row gt_right">0.42</td>
+<td class="gt_row gt_right">0.00</td></tr>
+  </tbody>
+  
+  
+</table>
+</div>
+]
+
+.pull-right[
+<div id="nfbyjctfkv" style="overflow-x:auto;overflow-y:auto;width:auto;height:auto;">
+<style>html {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', 'Fira Sans', 'Droid Sans', Arial, sans-serif;
+}
+
+#nfbyjctfkv .gt_table {
+  display: table;
+  border-collapse: collapse;
+  margin-left: auto;
+  margin-right: auto;
+  color: #333333;
+  font-size: 16px;
+  font-weight: normal;
+  font-style: normal;
+  background-color: #FFFFFF;
+  width: auto;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #A8A8A8;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #A8A8A8;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+}
+
+#nfbyjctfkv .gt_heading {
+  background-color: #FFFFFF;
+  text-align: center;
+  border-bottom-color: #FFFFFF;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#nfbyjctfkv .gt_title {
+  color: #333333;
+  font-size: 125%;
+  font-weight: initial;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  border-bottom-color: #FFFFFF;
+  border-bottom-width: 0;
+}
+
+#nfbyjctfkv .gt_subtitle {
+  color: #333333;
+  font-size: 85%;
+  font-weight: initial;
+  padding-top: 0;
+  padding-bottom: 6px;
+  border-top-color: #FFFFFF;
+  border-top-width: 0;
+}
+
+#nfbyjctfkv .gt_bottom_border {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#nfbyjctfkv .gt_col_headings {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#nfbyjctfkv .gt_col_heading {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 6px;
+  padding-left: 5px;
+  padding-right: 5px;
+  overflow-x: hidden;
+}
+
+#nfbyjctfkv .gt_column_spanner_outer {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+#nfbyjctfkv .gt_column_spanner_outer:first-child {
+  padding-left: 0;
+}
+
+#nfbyjctfkv .gt_column_spanner_outer:last-child {
+  padding-right: 0;
+}
+
+#nfbyjctfkv .gt_column_spanner {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  overflow-x: hidden;
+  display: inline-block;
+  width: 100%;
+}
+
+#nfbyjctfkv .gt_group_heading {
+  padding: 8px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+}
+
+#nfbyjctfkv .gt_empty_group_heading {
+  padding: 0.5px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: middle;
+}
+
+#nfbyjctfkv .gt_from_md > :first-child {
+  margin-top: 0;
+}
+
+#nfbyjctfkv .gt_from_md > :last-child {
+  margin-bottom: 0;
+}
+
+#nfbyjctfkv .gt_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  margin: 10px;
+  border-top-style: solid;
+  border-top-width: 1px;
+  border-top-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+  overflow-x: hidden;
+}
+
+#nfbyjctfkv .gt_stub {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-right-style: solid;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  padding-left: 12px;
+}
+
+#nfbyjctfkv .gt_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#nfbyjctfkv .gt_first_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+}
+
+#nfbyjctfkv .gt_grand_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#nfbyjctfkv .gt_first_grand_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-style: double;
+  border-top-width: 6px;
+  border-top-color: #D3D3D3;
+}
+
+#nfbyjctfkv .gt_striped {
+  background-color: rgba(128, 128, 128, 0.05);
+}
+
+#nfbyjctfkv .gt_table_body {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#nfbyjctfkv .gt_footnotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#nfbyjctfkv .gt_footnote {
+  margin: 0px;
+  font-size: 90%;
+  padding: 4px;
+}
+
+#nfbyjctfkv .gt_sourcenotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#nfbyjctfkv .gt_sourcenote {
+  font-size: 90%;
+  padding: 4px;
+}
+
+#nfbyjctfkv .gt_left {
+  text-align: left;
+}
+
+#nfbyjctfkv .gt_center {
+  text-align: center;
+}
+
+#nfbyjctfkv .gt_right {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+#nfbyjctfkv .gt_font_normal {
+  font-weight: normal;
+}
+
+#nfbyjctfkv .gt_font_bold {
+  font-weight: bold;
+}
+
+#nfbyjctfkv .gt_font_italic {
+  font-style: italic;
+}
+
+#nfbyjctfkv .gt_super {
+  font-size: 65%;
+}
+
+#nfbyjctfkv .gt_footnote_marks {
+  font-style: italic;
+  font-weight: normal;
+  font-size: 65%;
+}
+</style>
+<table class="gt_table">
+  
+  <thead class="gt_col_headings">
+    <tr>
+      <th class="gt_col_heading gt_columns_bottom_border gt_left" rowspan="1" colspan="1">term</th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_right" rowspan="1" colspan="1">estimate</th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_right" rowspan="1" colspan="1">std.error</th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_right" rowspan="1" colspan="1">p.value</th>
+    </tr>
+  </thead>
+  <tbody class="gt_table_body">
+    <tr><td class="gt_row gt_left">(Intercept)</td>
+<td class="gt_row gt_right">&minus;5.35</td>
+<td class="gt_row gt_right">1.26</td>
+<td class="gt_row gt_right">0.00</td></tr>
+    <tr><td class="gt_row gt_left">win_game_1TRUE</td>
+<td class="gt_row gt_right">2.23</td>
+<td class="gt_row gt_right">0.40</td>
+<td class="gt_row gt_right">0.00</td></tr>
+    <tr><td class="gt_row gt_left">win_game_2TRUE</td>
+<td class="gt_row gt_right">2.32</td>
+<td class="gt_row gt_right">0.41</td>
+<td class="gt_row gt_right">0.00</td></tr>
+    <tr><td class="gt_row gt_left">win_game_3TRUE</td>
+<td class="gt_row gt_right">2.27</td>
+<td class="gt_row gt_right">0.42</td>
+<td class="gt_row gt_right">0.00</td></tr>
+    <tr><td class="gt_row gt_left">p_win_game_1</td>
+<td class="gt_row gt_right">4.70</td>
+<td class="gt_row gt_right">2.11</td>
+<td class="gt_row gt_right">0.03</td></tr>
+  </tbody>
+  
+  
+</table>
+</div>
+]
+---
+### Home court advantage still matters if we account for Elo
+<div id="zbdpqiusgg" style="overflow-x:auto;overflow-y:auto;width:auto;height:auto;">
+<style>html {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', 'Fira Sans', 'Droid Sans', Arial, sans-serif;
+}
+
+#zbdpqiusgg .gt_table {
+  display: table;
+  border-collapse: collapse;
+  margin-left: auto;
+  margin-right: auto;
+  color: #333333;
+  font-size: 16px;
+  font-weight: normal;
+  font-style: normal;
+  background-color: #FFFFFF;
+  width: auto;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #A8A8A8;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #A8A8A8;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+}
+
+#zbdpqiusgg .gt_heading {
+  background-color: #FFFFFF;
+  text-align: center;
+  border-bottom-color: #FFFFFF;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#zbdpqiusgg .gt_title {
+  color: #333333;
+  font-size: 125%;
+  font-weight: initial;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  border-bottom-color: #FFFFFF;
+  border-bottom-width: 0;
+}
+
+#zbdpqiusgg .gt_subtitle {
+  color: #333333;
+  font-size: 85%;
+  font-weight: initial;
+  padding-top: 0;
+  padding-bottom: 6px;
+  border-top-color: #FFFFFF;
+  border-top-width: 0;
+}
+
+#zbdpqiusgg .gt_bottom_border {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#zbdpqiusgg .gt_col_headings {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#zbdpqiusgg .gt_col_heading {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 6px;
+  padding-left: 5px;
+  padding-right: 5px;
+  overflow-x: hidden;
+}
+
+#zbdpqiusgg .gt_column_spanner_outer {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+#zbdpqiusgg .gt_column_spanner_outer:first-child {
+  padding-left: 0;
+}
+
+#zbdpqiusgg .gt_column_spanner_outer:last-child {
+  padding-right: 0;
+}
+
+#zbdpqiusgg .gt_column_spanner {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  overflow-x: hidden;
+  display: inline-block;
+  width: 100%;
+}
+
+#zbdpqiusgg .gt_group_heading {
+  padding: 8px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+}
+
+#zbdpqiusgg .gt_empty_group_heading {
+  padding: 0.5px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: middle;
+}
+
+#zbdpqiusgg .gt_from_md > :first-child {
+  margin-top: 0;
+}
+
+#zbdpqiusgg .gt_from_md > :last-child {
+  margin-bottom: 0;
+}
+
+#zbdpqiusgg .gt_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  margin: 10px;
+  border-top-style: solid;
+  border-top-width: 1px;
+  border-top-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+  overflow-x: hidden;
+}
+
+#zbdpqiusgg .gt_stub {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-right-style: solid;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  padding-left: 12px;
+}
+
+#zbdpqiusgg .gt_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#zbdpqiusgg .gt_first_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+}
+
+#zbdpqiusgg .gt_grand_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#zbdpqiusgg .gt_first_grand_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-style: double;
+  border-top-width: 6px;
+  border-top-color: #D3D3D3;
+}
+
+#zbdpqiusgg .gt_striped {
+  background-color: rgba(128, 128, 128, 0.05);
+}
+
+#zbdpqiusgg .gt_table_body {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#zbdpqiusgg .gt_footnotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#zbdpqiusgg .gt_footnote {
+  margin: 0px;
+  font-size: 90%;
+  padding: 4px;
+}
+
+#zbdpqiusgg .gt_sourcenotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#zbdpqiusgg .gt_sourcenote {
+  font-size: 90%;
+  padding: 4px;
+}
+
+#zbdpqiusgg .gt_left {
+  text-align: left;
+}
+
+#zbdpqiusgg .gt_center {
+  text-align: center;
+}
+
+#zbdpqiusgg .gt_right {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+#zbdpqiusgg .gt_font_normal {
+  font-weight: normal;
+}
+
+#zbdpqiusgg .gt_font_bold {
+  font-weight: bold;
+}
+
+#zbdpqiusgg .gt_font_italic {
+  font-style: italic;
+}
+
+#zbdpqiusgg .gt_super {
+  font-size: 65%;
+}
+
+#zbdpqiusgg .gt_footnote_marks {
+  font-style: italic;
+  font-weight: normal;
+  font-size: 65%;
+}
+</style>
+<table class="gt_table">
+  
+  <thead class="gt_col_headings">
+    <tr>
+      <th class="gt_col_heading gt_columns_bottom_border gt_left" rowspan="1" colspan="1">term</th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_right" rowspan="1" colspan="1">estimate</th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_right" rowspan="1" colspan="1">std.error</th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_right" rowspan="1" colspan="1">statistic</th>
+      <th class="gt_col_heading gt_columns_bottom_border gt_right" rowspan="1" colspan="1">p.value</th>
+    </tr>
+  </thead>
+  <tbody class="gt_table_body">
+    <tr><td class="gt_row gt_left">(Intercept)</td>
+<td class="gt_row gt_right">&minus;0.39</td>
+<td class="gt_row gt_right">0.09</td>
+<td class="gt_row gt_right">&minus;4.33</td>
+<td class="gt_row gt_right">0.00</td></tr>
+    <tr><td class="gt_row gt_left">elo_diff</td>
+<td class="gt_row gt_right">0.01</td>
+<td class="gt_row gt_right">0.00</td>
+<td class="gt_row gt_right">6.47</td>
+<td class="gt_row gt_right">0.00</td></tr>
+    <tr><td class="gt_row gt_left">is_home_teamTRUE</td>
+<td class="gt_row gt_right">1.19</td>
+<td class="gt_row gt_right">0.11</td>
+<td class="gt_row gt_right">10.89</td>
+<td class="gt_row gt_right">0.00</td></tr>
+  </tbody>
+  
+  
+</table>
+</div>
+
+---
+### "I know I am just an algorithm... No one knows who I am, or what I do. But that all changes today." 
+Al G Rhythm on Bayesian updating
+.center[
+![](https://c.tenor.com/36LrUnJooEMAAAAC/hmm-alg-rhythm.gif)]
+---
+## A Bayesian perspective
+
+* Bayesian reasoning focuses on taking existing probability estimates and updating them based on new information
+* This seems like a natural framework for our questions: we're interested in how the serial outcomes of individual games influence the probability of an overall series win
+* Let's start by assuming we don't know anything about the two teams playing in a given series besides which one is higher-seeded. How estimate of their series win probability?
+  * In a "frequentist" perspective, we could estimate their win probability by the sample average series win frequency for higher-seeded teams: 75%
+  * In reality, we know that there's not just a single answer to this question: some series are very closely matched and others are not
+  * That 75% sample average is made up of a range of higher and lower individual win probabilities
+  * Bayesian reasoning lets us represent our estimate of the win probability with a probability distribution
+
+---
+
+## The beta distribution
+
+We let the higher-seeded team's series win probability `\(p\)` be described by a beta distribution. why?
+
+* Bounded between 0,1
+* Extremely flexible with only two parameters
+* Estimate `\(\alpha\)` and `\(\beta\)` (more on these in a second)
+.center[
+&lt;img src="https://upload.wikimedia.org/wikipedia/commons/thumb/f/f3/Beta_distribution_pdf.svg/1920px-Beta_distribution_pdf.svg.png" width="400" height="300" /&gt;
+]
+
+---
+
+## Developing a prior
+
+* What is our "prior" estimate of the distribution of win probability, before observing any game outcomes?
+* The most "uninformed" prior would be a beta(1,1), which is equivalent to the uniform distribution
+* But we definitely know at least a little more than that: at minimum, we know the home team is more likely to win (both because they are higher ranked and because of home court advantage)
+* We can use the pre-series Elo ratings and the negative binomial distribution to develop our prior
+
+---
+
+## The negative binomial distribution
+
+The negative binomial distribution is based on an experiment satisfying the following conditions:
+
+1. The experiment consists of a sequence of independent trials.
+2. Each trial can result in either a success or a failure.
+3. The probability of success `\(p\)` is constant from trial to trial
+4. The experiment continues until a total of `\(r\)` successes have been observed
+
+`$$nb(k; r, p) \equiv \Pr(X = k) = \binom{k+r-1}{r-1} (1-p)^kp^r$$`
+
+This sounds a lot like the conditions of a best-of-seven series! 
+
+---
+
+## Negative binomial series win probabilities
+
+* Given any two teams' pre-series Elo ratings, we can calculate the game-wise win probability, and feed this to the negative binomial distribution to estimate the series-wise win probability.
+* We know that the assumptions of the negative binomial don't fully hold in the NBA playoffs: home-court advantage means that the win probability varies in different game numbers. But maybe it's close enough to develop a reasonable prior
+* We estimated the win probabilities for each series in the dataset using Elo and the negative binomial, then fit a beta distribution to that sample
+* We found that the mean of this distribution was slightly lower than the empirical win frequency for the higher seeded team
+  * This makes sense because the negative binomial does not account for home court advantage
+  * We adjust the game-level win probability upward to approximate this. We find that a 9% increase in the higher-seeded team's game-level win probability results in a distribution with a mean that matches the empirical frequency.
+
+---
+
+### Our prior on series win probability
+
+
+```r
+beta_fit &lt;- MASS::fitdistr(po_dat_wide$prior_p_series_win, dbeta,
+                    start = list(shape1 = 1, shape2 = 1))
+# beta estimates: 3.86, 1.24
+alpha0 &lt;- beta_fit$estimate[1]
+beta0 &lt;- beta_fit$estimate[2]
+# mean p(series_win) is 76%
+alpha0/(alpha0+beta0)
+```
+
+.center[
+&lt;img src="bayes_jam_presentation_files/figure-html/unnamed-chunk-7-1.png" width="40%" height="40%" /&gt;
+]
+
+---
+## Updating the prior
+
+* The beta distribution has the special property of being a *conjugate prior* for Bernoulli trials
+* This means that, when we have a beta-distributed prior on a binomial probability, then observe a sample of Bernoulli trials, the posterior distribution after we update on the outcomes is also a beta distribution
+
+In particular, when we observe new successes and failures, the new Beta distribution becomes
+
+`$$Beta(\alpha_0+successes,\beta_0+failures)$$`
+
+In a basketball playoff context, say we observe `\(n\)` series and in `\(m\)` of those, the teams won game 1 and the series. We can update our prior accordingly 
+
+`$$Beta(\alpha_0+m,\beta_0+(n-m))$$`
+
+---
+
+### Update conditional on game 1 win
+
+.center[
+![](bayes_jam_presentation_files/figure-html/unnamed-chunk-8-1.png)&lt;!-- --&gt;
+]
+
+---
+### Update conditional on game 2 win
+
+.center[
+![](bayes_jam_presentation_files/figure-html/unnamed-chunk-9-1.png)&lt;!-- --&gt;
+]
+---
+
+## Update conditional on winning each of first four games
+
+.center[
+![](bayes_jam_presentation_files/figure-html/unnamed-chunk-10-1.png)&lt;!-- --&gt;
+]
+
+---
+
+### Update after losing game 1
+
+.center[
+![](bayes_jam_presentation_files/figure-html/unnamed-chunk-11-1.png)&lt;!-- --&gt;
+]
+
+---
+
+### Condition on a winning path
+
+.center[
+![](bayes_jam_presentation_files/figure-html/unnamed-chunk-12-1.png)&lt;!-- --&gt;
+
+]
+
+---
+
+## Estimate differences in means
+
+
+
+![](bayes_jam_presentation_files/figure-html/unnamed-chunk-13-1.png)&lt;!-- --&gt;
+
+
+---
+
+# Takeaways
+
+* Game 2 looks like the most influential game, but we need more playoff data to say this with  confidence!
+* Bayesian thinking lends itself well to cases like playoffs where an uncertain outcome is determined by a series of events that happen over time
+* It's very easy to update beta priors with Bernoulli trial outcomes
+* Posteriors help visualize how uncertainty decreases as well as how mean estimate changes
+
+---
+
+# References
+
+* [Understanding empirical Bayes estimation (using baseball statistics) by David Robinson](http://varianceexplained.org/r/empirical_bayes_baseball/)
+* [ELO Rating System](https://en.wikipedia.org/wiki/Elo_rating_system)
+    </textarea>
+<style data-target="print-only">@media screen {.remark-slide-container{display:block;}.remark-slide-scaler{box-shadow:none;}}</style>
+<script src="https://remarkjs.com/downloads/remark-latest.min.js"></script>
+<script src="macros.js"></script>
+<script>var slideshow = remark.create({
+"highlightStyle": "github",
+"highlightLines": true
+});
+if (window.HTMLWidgets) slideshow.on('afterShowSlide', function (slide) {
+  window.dispatchEvent(new Event('resize'));
+});
+(function(d) {
+  var s = d.createElement("style"), r = d.querySelector(".remark-slide-scaler");
+  if (!r) return;
+  s.type = "text/css"; s.innerHTML = "@page {size: " + r.style.width + " " + r.style.height +"; }";
+  d.head.appendChild(s);
+})(document);
+
+(function(d) {
+  var el = d.getElementsByClassName("remark-slides-area");
+  if (!el) return;
+  var slide, slides = slideshow.getSlides(), els = el[0].children;
+  for (var i = 1; i < slides.length; i++) {
+    slide = slides[i];
+    if (slide.properties.continued === "true" || slide.properties.count === "false") {
+      els[i - 1].className += ' has-continuation';
+    }
+  }
+  var s = d.createElement("style");
+  s.type = "text/css"; s.innerHTML = "@media print { .has-continuation { display: none; } }";
+  d.head.appendChild(s);
+})(document);
+// delete the temporary CSS (for displaying all slides initially) when the user
+// starts to view slides
+(function() {
+  var deleted = false;
+  slideshow.on('beforeShowSlide', function(slide) {
+    if (deleted) return;
+    var sheets = document.styleSheets, node;
+    for (var i = 0; i < sheets.length; i++) {
+      node = sheets[i].ownerNode;
+      if (node.dataset["target"] !== "print-only") continue;
+      node.parentNode.removeChild(node);
+    }
+    deleted = true;
+  });
+})();
+(function() {
+  "use strict"
+  // Replace <script> tags in slides area to make them executable
+  var scripts = document.querySelectorAll(
+    '.remark-slides-area .remark-slide-container script'
+  );
+  if (!scripts.length) return;
+  for (var i = 0; i < scripts.length; i++) {
+    var s = document.createElement('script');
+    var code = document.createTextNode(scripts[i].textContent);
+    s.appendChild(code);
+    var scriptAttrs = scripts[i].attributes;
+    for (var j = 0; j < scriptAttrs.length; j++) {
+      s.setAttribute(scriptAttrs[j].name, scriptAttrs[j].value);
+    }
+    scripts[i].parentElement.replaceChild(s, scripts[i]);
+  }
+})();
+(function() {
+  var links = document.getElementsByTagName('a');
+  for (var i = 0; i < links.length; i++) {
+    if (/^(https?:)?\/\//.test(links[i].getAttribute('href'))) {
+      links[i].target = '_blank';
+    }
+  }
+})();
+// adds .remark-code-has-line-highlighted class to <pre> parent elements
+// of code chunks containing highlighted lines with class .remark-code-line-highlighted
+(function(d) {
+  const hlines = d.querySelectorAll('.remark-code-line-highlighted');
+  const preParents = [];
+  const findPreParent = function(line, p = 0) {
+    if (p > 1) return null; // traverse up no further than grandparent
+    const el = line.parentElement;
+    return el.tagName === "PRE" ? el : findPreParent(el, ++p);
+  };
+
+  for (let line of hlines) {
+    let pre = findPreParent(line);
+    if (pre && !preParents.includes(pre)) preParents.push(pre);
+  }
+  preParents.forEach(p => p.classList.add("remark-code-has-line-highlighted"));
+})(document);</script>
+
+<script>
+slideshow._releaseMath = function(el) {
+  var i, text, code, codes = el.getElementsByTagName('code');
+  for (i = 0; i < codes.length;) {
+    code = codes[i];
+    if (code.parentNode.tagName !== 'PRE' && code.childElementCount === 0) {
+      text = code.textContent;
+      if (/^\\\((.|\s)+\\\)$/.test(text) || /^\\\[(.|\s)+\\\]$/.test(text) ||
+          /^\$\$(.|\s)+\$\$$/.test(text) ||
+          /^\\begin\{([^}]+)\}(.|\s)+\\end\{[^}]+\}$/.test(text)) {
+        code.outerHTML = code.innerHTML;  // remove <code></code>
+        continue;
+      }
+    }
+    i++;
+  }
+};
+slideshow._releaseMath(document);
+</script>
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+(function () {
+  var script = document.createElement('script');
+  script.type = 'text/javascript';
+  script.src  = 'https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-MML-AM_CHTML';
+  if (location.protocol !== 'file:' && /^https?:/.test(script.src))
+    script.src  = script.src.replace(/^https?:/, '');
+  document.getElementsByTagName('head')[0].appendChild(script);
+})();
+</script>
+  </body>
+</html>
