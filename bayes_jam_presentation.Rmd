@@ -60,7 +60,7 @@ po_dat_wide <- po_dat_wide %>%
 ---
 ## Data
 
-* The outcome of every playoff game from 1998-2019 from [basketballreference.com](https://github.com/jaebradley/basketball_reference_web_scraper), scraped with Python
+* The outcome of every playoff game from 1998-2020 from [basketballreference.com](https://github.com/jaebradley/basketball_reference_web_scraper), scraped with Python
 * ELO rating data from [538](https://projects.fivethirtyeight.com/complete-history-of-the-nba/#bucks), from R *fivethirtyeightdata* package
    * A relative ranking system updated after every game, originally developed for chess. Can be used to infer the probability of winning a single game
 > " Two players with equal ratings who play against each other are expected to score an equal number of wins. A player whose rating is 100 points greater than their opponent's is expected to score 64%; if the difference is 200 points, then the expected score for the stronger player is 76%."
@@ -172,6 +172,7 @@ po_dat_wide %>%
   dplyr::select(-statistic) %>%
    gt %>%
    fmt_number(-term)
+
 ```
 ]
 ---
@@ -353,17 +354,17 @@ alpha4 <- alpha0 + ws_cond
 beta4 <- beta0 + (cond - ws_cond)
 
 ggplot() +
-  stat_function(fun = function(x) dbeta(x, alpha1, beta1), aes(color = "blue"),
+  stat_function(fun = function(x) dbeta(x, alpha1, beta1), aes(color = "w1"),
                 size = 1) +
-  stat_function(fun = function(x) dbeta(x, alpha2, beta2), aes(color = "red"),
+  stat_function(fun = function(x) dbeta(x, alpha2, beta2), aes(color = "w2"),
                 size = 1) +
-  stat_function(fun = function(x) dbeta(x, alpha3, beta3), aes(color = "green"),
+  stat_function(fun = function(x) dbeta(x, alpha3, beta3), aes(color = "w3"),
                 size = 1) +
-  stat_function(fun = function(x) dbeta(x, alpha4, beta4), aes(color = "purple"),
+  stat_function(fun = function(x) dbeta(x, alpha4, beta4), aes(color = "w4"),
                 size = 1) +
   xlab("Series win probability") +
   scale_colour_manual(
-  values = c('blue', 'red', 'green', 'purple'),
+  values = c('w1' = 'red', 'w2' = 'blue', 'w3' = 'green', 'w4' = 'purple'),
   labels = c('Estimate after winning game 1', 'Estimate after winning game 2', 'Estimate after winning game 3', 'Estimate after winning game 4')) + 
    guides(color = guide_legend(title = ""))
 ```
