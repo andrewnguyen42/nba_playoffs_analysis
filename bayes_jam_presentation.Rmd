@@ -61,7 +61,7 @@ po_dat_wide <- po_dat_wide %>%
 ## Data
 
 * The outcome of every playoff game from 1998-2020 from [basketballreference.com](https://github.com/jaebradley/basketball_reference_web_scraper), scraped with Python
-* ELO rating data from [538](https://projects.fivethirtyeight.com/complete-history-of-the-nba/#bucks), from R *fivethirtyeightdata* package
+* Elo rating data from [538](https://projects.fivethirtyeight.com/complete-history-of-the-nba/#bucks), from R *fivethirtyeightdata* package
    * A relative ranking system updated after every game, originally developed for chess. Can be used to infer the probability of winning a single game
 > " Two players with equal ratings who play against each other are expected to score an equal number of wins. A player whose rating is 100 points greater than their opponent's is expected to score 64%; if the difference is 200 points, then the expected score for the stronger player is 76%."
 
@@ -71,7 +71,7 @@ po_dat_wide <- po_dat_wide %>%
 
 * Analyze all playoff series from the perspective of the higher seeded team
    * Want to be consistent when considering which games matter, given standardized home-away pattern
-* Examine ELO, home court advantage, individual game influence
+* Examine Elo, home court advantage, individual game influence
 * We'll look at summary statistics, logit regression, and Bayesian estimation
 * We focus most on games 1-4, as these are played in every series
   * Analyzing games 5-7 is tricky because their existence is conditional on earlier game outcomes
@@ -211,9 +211,13 @@ We let the higher-seeded team's series win probability $p$ be described by a bet
 * Bounded between 0,1
 * Extremely flexible with only two parameters
 * Estimate $\alpha$ and $\beta$ (more on these in a second)
+
+$$\operatorname{E}[X] = \frac{\alpha}{\alpha+\beta}$$
+
 .center[
 <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/f/f3/Beta_distribution_pdf.svg/1920px-Beta_distribution_pdf.svg.png" width="400" height="300" />
 ]
+
 
 ---
 
@@ -235,7 +239,9 @@ The negative binomial distribution is based on an experiment satisfying the foll
 3. The probability of success $p$ is constant from trial to trial
 4. The experiment continues until a total of $r$ successes have been observed
 
-$$nb(k; r, p) \equiv \Pr(X = k) = \binom{k+r-1}{r-1} (1-p)^kp^r$$
+.center[
+<img src="https://www.statisticshowto.com/wp-content/uploads/2015/04/negative-bimonial.png" width="350" height="250" />
+]
 
 This sounds a lot like the conditions of a best-of-seven series! 
 
@@ -308,7 +314,7 @@ ggplot() +
   xlab("Series win probability") +
   scale_colour_manual(
   values = c('black', 'blue'),
-  labels = c('Initial Estimate', 'Estimate after winning game 1')) + 
+  labels = c('Initial Estimate (Prior)', 'Estimate after winning game 1 (Posterior)')) + 
    guides(color = guide_legend(title = "")) 
 ```
 ]
@@ -332,13 +338,13 @@ ggplot() +
   xlab("Series win probability") +
   scale_colour_manual(
   values = c('black', 'red'),
-  labels = c('Initial Estimate', 'Estimate after winning game 2')) + 
+  labels = c('Initial Estimate (Prior)', 'Estimate after winning game 2 (Posterior)')) + 
    guides(color = guide_legend(title = "")) 
 ```
 ]
 ---
 
-## Update conditional on winning each of first four games
+### Update conditional on winning each of first four games
 
 .center[
 ```{r}
